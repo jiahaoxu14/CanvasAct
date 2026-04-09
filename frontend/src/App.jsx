@@ -68,12 +68,62 @@ const emptyReferenceResolution = {
   unresolvedReferences: [],
 };
 
+const textLabelAutoSize = {
+  minWidth: 170,
+  maxWidth: 460,
+  minHeight: 58,
+  paddingX: 36,
+  paddingY: 28,
+  lineHeight: 28,
+  charWidth: 9.5,
+};
+
 function roundNumber(value) {
   return Math.round(value * 100) / 100;
 }
 
 function cloneSnapshotData(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function getTextLabelSizeForText(text) {
+  const textValue = typeof text === "string" ? text : "";
+  const paragraphs = textValue ? textValue.split("\n") : [""];
+  const longestLineChars = paragraphs.reduce(
+    (currentMax, paragraph) => Math.max(currentMax, Math.max(paragraph.length, 1)),
+    1,
+  );
+  const minContentWidth = textLabelAutoSize.minWidth - textLabelAutoSize.paddingX;
+  const maxContentWidth = textLabelAutoSize.maxWidth - textLabelAutoSize.paddingX;
+  const naturalContentWidth = Math.ceil(
+    longestLineChars * textLabelAutoSize.charWidth,
+  );
+  const contentWidth = Math.max(
+    minContentWidth,
+    Math.min(maxContentWidth, naturalContentWidth),
+  );
+  const lineCount = paragraphs.reduce(
+    (total, paragraph) =>
+      total +
+      Math.max(
+        1,
+        Math.ceil(
+          (Math.max(paragraph.length, 1) * textLabelAutoSize.charWidth) /
+            contentWidth,
+        ),
+      ),
+    0,
+  );
+
+  return {
+    width: contentWidth + textLabelAutoSize.paddingX,
+    height: Math.max(
+      textLabelAutoSize.minHeight,
+      Math.ceil(
+        lineCount * textLabelAutoSize.lineHeight + textLabelAutoSize.paddingY,
+      ),
+    ),
+  };
 }
 
 function createSnapshot(nodes, edges, nextId) {
@@ -103,6 +153,14 @@ function isTextEditingTarget(target) {
 
 function buildNode(type, id, position, overrides = {}) {
   const template = nodeTemplates[type];
+  const label = overrides.data?.label ?? template.label;
+  const hasExplicitSize =
+    typeof overrides.style?.width === "number" &&
+    typeof overrides.style?.height === "number";
+  const autoSizedTextLabel =
+    type === "textLabel" && !hasExplicitSize
+      ? getTextLabelSizeForText(label)
+      : null;
 
   return {
     id,
@@ -113,8 +171,8 @@ function buildNode(type, id, position, overrides = {}) {
       ...overrides.data,
     },
     style: {
-      width: template.width,
-      height: template.height,
+      width: autoSizedTextLabel?.width ?? template.width,
+      height: autoSizedTextLabel?.height ?? template.height,
       ...overrides.style,
     },
     ...overrides,
@@ -598,15 +656,27 @@ function Whiteboard() {
       y: window.innerHeight * 0.5,
     });
     const template = nodeTemplates[type];
+    const autoSizedTextLabel =
+      type === "textLabel" ? getTextLabelSizeForText(template.label) : null;
+    const nodeWidth = autoSizedTextLabel?.width ?? template.width;
+    const nodeHeight = autoSizedTextLabel?.height ?? template.height;
     const offset = (nextIdRef.current % 4) * 24;
     const node = buildNode(
       type,
       nextId("node"),
       {
-        x: center.x - template.width / 2 + offset,
-        y: center.y - template.height / 2 + offset,
+        x: center.x - nodeWidth / 2 + offset,
+        y: center.y - nodeHeight / 2 + offset,
       },
       {
+        ...(autoSizedTextLabel
+          ? {
+              style: {
+                width: autoSizedTextLabel.width,
+                height: autoSizedTextLabel.height,
+              },
+            }
+          : {}),
         selected: true,
       },
     );
@@ -656,6 +726,14 @@ function Whiteboard() {
                   ...node.data,
                   label: value,
                 },
+                ...(node.type === "textLabel"
+                  ? {
+                      style: {
+                        ...node.style,
+                        ...getTextLabelSizeForText(value),
+                      },
+                    }
+                  : {}),
               }
             : node,
         ),

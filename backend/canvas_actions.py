@@ -1,4 +1,5 @@
 import json
+import math
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -13,6 +14,15 @@ CANVAS_BOUNDS = {
 }
 
 HANDLE_VALUES = ("left", "top", "right", "bottom")
+TEXT_LABEL_AUTO_SIZE = {
+    "min_width": 170,
+    "max_width": 460,
+    "min_height": 58,
+    "padding_x": 36,
+    "padding_y": 28,
+    "line_height": 28,
+    "char_width": 9.5,
+}
 ACTION_ORDER = (
     "Create",
     "Select",
@@ -369,6 +379,56 @@ def _require_geometry_within_canvas(geometry: dict, message: str) -> None:
         raise CanvasActionPreconditionError(message)
 
 
+def _fit_text_label_geometry(geometry: dict, text: Optional[str]) -> dict:
+    text_value = text if isinstance(text, str) else ""
+    paragraphs = text_value.split("\n") if text_value else [""]
+    longest_line_chars = max(max(len(paragraph), 1) for paragraph in paragraphs)
+
+    min_content_width = (
+        TEXT_LABEL_AUTO_SIZE["min_width"] - TEXT_LABEL_AUTO_SIZE["padding_x"]
+    )
+    max_content_width = (
+        TEXT_LABEL_AUTO_SIZE["max_width"] - TEXT_LABEL_AUTO_SIZE["padding_x"]
+    )
+    natural_content_width = math.ceil(
+        longest_line_chars * TEXT_LABEL_AUTO_SIZE["char_width"]
+    )
+    content_width = max(
+        min_content_width,
+        min(max_content_width, natural_content_width),
+    )
+    line_count = sum(
+        max(
+            1,
+            math.ceil(
+                max(len(paragraph), 1)
+                * TEXT_LABEL_AUTO_SIZE["char_width"]
+                / content_width
+            ),
+        )
+        for paragraph in paragraphs
+    )
+
+    return {
+        **deepcopy(geometry),
+        "w": content_width + TEXT_LABEL_AUTO_SIZE["padding_x"],
+        "h": max(
+            TEXT_LABEL_AUTO_SIZE["min_height"],
+            math.ceil(
+                line_count * TEXT_LABEL_AUTO_SIZE["line_height"]
+                + TEXT_LABEL_AUTO_SIZE["padding_y"]
+            ),
+        ),
+    }
+
+
+def _resolved_create_geometry(action: dict) -> dict:
+    geometry = deepcopy(action["geometry"])
+    if action["object_type"] == "text-label":
+        return _fit_text_label_geometry(geometry, action.get("text"))
+    return geometry
+
+
 def _handle_point(geometry: dict, handle: str) -> dict:
     if handle == "left":
         return {"x": geometry["x"], "y": geometry["y"] + geometry["h"] / 2}
@@ -429,7 +489,7 @@ def _check_create_preconditions(state: dict, action: dict) -> None:
             f"Entity {action['id']!r} already exists."
         )
     _require_geometry_within_canvas(
-        action["geometry"],
+        _resolved_create_geometry(action),
         f"Create would place entity {action['id']!r} outside canvas bounds.",
     )
 
@@ -488,7 +548,18 @@ def _resolve_annotation_target(state: dict, action: dict) -> Tuple[str, dict, st
 
 
 def _check_annotate_preconditions(state: dict, action: dict) -> None:
-    _resolve_annotation_target(state, action)
+    collection_name, entity, field = _resolve_annotation_target(state, action)
+    if collection_name != "objects" or field != "text" or entity["type"] != "text-label":
+        return
+
+    next_geometry = _fit_text_label_geometry(entity["geometry"], action["text"])
+    _require_geometry_within_canvas(
+        next_geometry,
+        (
+            f"Annotate would resize text label {action['target']!r} "
+            "outside canvas bounds."
+        ),
+    )
 
 
 def _check_delete_preconditions(state: dict, action: dict) -> None:
@@ -501,7 +572,7 @@ def _execute_create(state: dict, action: dict) -> dict:
         "id": action["id"],
         "type": action["object_type"],
         "content": {"text": action.get("text", "")},
-        "geometry": deepcopy(action["geometry"]),
+        "geometry": _resolved_create_geometry(action),
     }
     state["objects"].append(entity)
     previous_selection = deepcopy(state["selection"])
@@ -588,11 +659,15 @@ def _execute_connect(state: dict, action: dict) -> dict:
 def _execute_annotate(state: dict, action: dict) -> dict:
     collection_name, entity, field = _resolve_annotation_target(state, action)
     previous_value = entity["content"].get(field, "")
+    previous_geometry = deepcopy(entity["geometry"]) if collection_name == "objects" else None
     entity["content"][field] = action["text"]
+    if collection_name == "objects" and entity["type"] == "text-label" and field == "text":
+        entity["geometry"] = _fit_text_label_geometry(entity["geometry"], action["text"])
     return {
         "collection_name": collection_name,
         "field": field,
         "previous_value": previous_value,
+        "previous_geometry": previous_geometry,
     }
 
 
@@ -654,6 +729,15 @@ def _check_create_postcondition(state: dict, action: dict, context: dict) -> Non
         raise CanvasActionPostconditionError(
             f"Created object {action['id']!r} has the wrong type."
         )
+    if entity["type"] == "text-label":
+        expected_geometry = _fit_text_label_geometry(
+            context["created_entity"]["geometry"],
+            entity["content"].get("text", ""),
+        )
+        if entity["geometry"] != expected_geometry:
+            raise CanvasActionPostconditionError(
+                f"Created text label {action['id']!r} was not auto-sized."
+            )
 
 
 def _check_select_postcondition(state: dict, action: dict, context: dict) -> None:
@@ -702,6 +786,19 @@ def _check_annotate_postcondition(state: dict, action: dict, context: dict) -> N
         raise CanvasActionPostconditionError(
             f"Annotation did not update {field} for {action['target']!r}."
         )
+    if (
+        _collection_name == "objects"
+        and entity["type"] == "text-label"
+        and field == "text"
+    ):
+        expected_geometry = _fit_text_label_geometry(
+            context["previous_geometry"],
+            action["text"],
+        )
+        if entity["geometry"] != expected_geometry:
+            raise CanvasActionPostconditionError(
+                f"Text label {action['target']!r} was not auto-sized after annotation."
+            )
 
 
 def _check_delete_postcondition(state: dict, action: dict, context: dict) -> None:
@@ -752,6 +849,8 @@ def _undo_annotate(state: dict, action: dict, context: dict) -> None:
     if collection_name not in ("objects", "connectors"):
         raise CanvasActionPreconditionError("Unsupported annotation target during undo.")
     entity["content"][field] = context["previous_value"]
+    if collection_name == "objects" and context["previous_geometry"] is not None:
+        entity["geometry"] = deepcopy(context["previous_geometry"])
 
 
 def _undo_delete(state: dict, action: dict, context: dict) -> None:
@@ -843,6 +942,7 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
         preconditions=[
             "target must be an existing object or connector",
             "field must match target kind: text for objects, label for connectors",
+            "annotating a text label auto-resizes it to fit the updated text",
         ],
         deterministic_executor="_execute_annotate",
         postcondition_checker="_check_annotate_postcondition",

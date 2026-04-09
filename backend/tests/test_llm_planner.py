@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
+from canvas_actions import execute_action_batch, undo_executed_actions
 from llm_planner import (
     LLMPlannerUpstreamError,
     build_action_repair_prompt,
@@ -437,6 +438,49 @@ class PlannerExecutionTests(unittest.TestCase):
         self.assertEqual(result["actions"][0]["targets"], ["n1", "n2"])
         self.assertEqual(len(result["failureLog"]), 1)
         self.assertIn("does not exist", result["failureLog"][0]["error"])
+
+
+class ExecutorBehaviorTests(unittest.TestCase):
+    def test_annotate_auto_resizes_text_label_and_undo_restores_geometry(self):
+        initial_state = sample_canvas_state()
+        original_label = next(
+            item for item in initial_state["objects"] if item["id"] == "n4"
+        )
+        original_geometry = original_label["geometry"].copy()
+
+        result = execute_action_batch(
+            initial_state,
+            [
+                {
+                    "op": "Annotate",
+                    "target": "n4",
+                    "text": (
+                        "A much longer methods heading that should wrap and "
+                        "grow the text label geometry."
+                    ),
+                }
+            ],
+        )
+
+        updated_label = next(
+            item for item in result["canvas_state"]["objects"] if item["id"] == "n4"
+        )
+        self.assertEqual(
+            updated_label["content"]["text"],
+            "A much longer methods heading that should wrap and grow the text label geometry.",
+        )
+        self.assertNotEqual(updated_label["geometry"], original_geometry)
+        self.assertGreater(updated_label["geometry"]["h"], original_geometry["h"])
+
+        undone_state = undo_executed_actions(
+            result["canvas_state"],
+            result["executed_actions"],
+        )
+        restored_label = next(
+            item for item in undone_state["objects"] if item["id"] == "n4"
+        )
+        self.assertEqual(restored_label["content"]["text"], "Methods")
+        self.assertEqual(restored_label["geometry"], original_geometry)
 
 
 class ApiTests(unittest.TestCase):

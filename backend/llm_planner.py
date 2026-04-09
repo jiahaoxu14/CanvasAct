@@ -781,6 +781,7 @@ def build_action_system_prompt(canvas_state: dict) -> str:
             "Every targets array must be non-empty.",
             "Connect actions must include both source and target.",
             "Move, Resize, and Create must keep object geometry inside CANVAS_BOUNDS.",
+            "Annotate on a text-label automatically resizes the label to fit the updated text.",
             "Do not include fields that are irrelevant for the chosen op.",
             "Do not reference an entity after deleting it in the same response.",
             "CURRENT_CANVAS_STATE_JSON:",
