@@ -406,56 +406,128 @@ function getActionReferenceIds(action) {
 const initialNodes = [
   buildNode("stickyNote", "node-1", { x: 86, y: 132 }, {
     data: {
-      label: "Interview 6 graduate students about how they organize papers.",
+      label: "Destination: Tokyo.\nPurpose: 5-day spring trip with 2 days of sightseeing and 1 day at DisneySea.",
     },
     style: {
-      width: 220,
+      width: 216,
+      height: 142,
+    },
+  }),
+  buildNode("stickyNote", "node-2", { x: 334, y: 132 }, {
+    data: {
+      label: "Travel dates: April 10 to April 15.\nCherry blossom season means higher hotel demand.",
+    },
+    style: {
+      width: 216,
+      height: 138,
+    },
+  }),
+  buildNode("stickyNote", "node-3", { x: 582, y: 132 }, {
+    data: {
+      label: "Budget target: keep total spend under $2,400 including flights, hotel, park ticket, and food.",
+    },
+    style: {
+      width: 216,
       height: 144,
     },
   }),
-  buildNode("stickyNote", "node-2", { x: 352, y: 118 }, {
+  buildNode("stickyNote", "node-4", { x: 830, y: 132 }, {
     data: {
-      label: "Cluster notes into themes: search, reading, annotation, and writing.",
+      label: "Compare nonstop flight from LAX vs cheaper 1-stop option.\nAirport train into central Tokyo takes about 1 hour.",
     },
     style: {
-      width: 224,
-      height: 156,
+      width: 216,
+      height: 146,
     },
   }),
-  buildNode("stickyNote", "node-3", { x: 624, y: 152 }, {
+  buildNode("stickyNote", "node-5", { x: 86, y: 292 }, {
     data: {
-      label: "Arrange the themes into a simple left-to-right pipeline from collection to summary.",
+      label: "Stay 3 nights in Shinjuku and 2 nights near Maihama to make DisneySea day easier.",
     },
     style: {
-      width: 236,
-      height: 156,
+      width: 216,
+      height: 138,
     },
   }),
-  buildNode("stickyNote", "node-4", { x: 176, y: 348 }, {
+  buildNode("stickyNote", "node-6", { x: 334, y: 292 }, {
     data: {
-      label: "Evaluation notes mention citation export and tag-based filtering.",
+      label: "Use Suica card for trains.\nNo rental car needed inside Tokyo.",
     },
     style: {
-      width: 222,
+      width: 216,
+      height: 126,
+    },
+  }),
+  buildNode("stickyNote", "node-7", { x: 582, y: 292 }, {
+    data: {
+      label: "Day 1 arrival.\nDay 2 Asakusa + Ueno.\nDay 3 Shibuya + Harajuku.\nDay 4 DisneySea.\nDay 5 departure.",
+    },
+    style: {
+      width: 216,
+      height: 152,
+    },
+  }),
+  buildNode("stickyNote", "node-8", { x: 830, y: 292 }, {
+    data: {
+      label: "Must-see: Tokyo DisneySea, teamLab Planets, Senso-ji, Shibuya Sky, and late-night ramen in Shinjuku.",
+    },
+    style: {
+      width: 216,
       height: 148,
     },
   }),
-  buildNode("stickyNote", "node-5", { x: 454, y: 360 }, {
+  buildNode("stickyNote", "node-9", { x: 86, y: 452 }, {
     data: {
-      label: "Capture friction points around switching between papers, tags, and notes.",
+      label: "Book one sushi dinner, keep 2 flexible nights for izakaya hopping, and try convenience-store breakfast once.",
     },
     style: {
-      width: 232,
-      height: 150,
+      width: 216,
+      height: 148,
     },
   }),
-  buildNode("stickyNote", "node-6", { x: 744, y: 346 }, {
+  buildNode("stickyNote", "node-10", { x: 334, y: 452 }, {
     data: {
-      label: "Add arrows to show which themes feed into the final outline.",
+      label: "Need park ticket, Shibuya Sky reservation, and airport transfer booked at least 3 weeks ahead.",
     },
     style: {
-      width: 230,
-      height: 150,
+      width: 216,
+      height: 144,
+    },
+  }),
+  buildNode("stickyNote", "node-11", { x: 582, y: 452 }, {
+    data: {
+      label: "Pack light jacket, portable charger, walking shoes, passport copy, and one empty tote for shopping.",
+    },
+    style: {
+      width: 216,
+      height: 144,
+    },
+  }),
+  buildNode("stickyNote", "node-12", { x: 830, y: 452 }, {
+    data: {
+      label: "April is mild but can be rainy.\nBring layers for cool evenings and a compact umbrella.",
+    },
+    style: {
+      width: 216,
+      height: 138,
+    },
+  }),
+  buildNode("stickyNote", "node-13", { x: 210, y: 612 }, {
+    data: {
+      label: "Traveling with one friend who wants shopping time and one who cares most about food and DisneySea.",
+    },
+    style: {
+      width: 216,
+      height: 146,
+    },
+  }),
+  buildNode("stickyNote", "node-14", { x: 514, y: 612 }, {
+    data: {
+      label: "If rain hits DisneySea day, swap with museum day and keep one indoor backup list ready.",
+    },
+    style: {
+      width: 216,
+      height: 140,
     },
   }),
 ];
@@ -482,7 +554,7 @@ function Whiteboard() {
   });
   const [, setHistoryVersion] = useState(0);
 
-  const nextIdRef = useRef(7);
+  const nextIdRef = useRef(15);
   const historyRef = useRef({
     past: [],
     future: [],

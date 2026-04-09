@@ -439,6 +439,62 @@ class PlannerExecutionTests(unittest.TestCase):
         self.assertEqual(len(result["failureLog"]), 1)
         self.assertIn("does not exist", result["failureLog"][0]["error"])
 
+    @patch("llm_planner._call_openai_structured_json")
+    def test_plan_actions_repairs_move_missing_delta(self, mock_call):
+        mock_call.side_effect = [
+            {
+                "actions": [
+                    {
+                        "op": "Move",
+                        "targets": ["n1"],
+                        "delta": None,
+                        "id": None,
+                        "object_type": None,
+                        "geometry": None,
+                        "text": None,
+                        "selected": None,
+                        "mode": None,
+                        "target": None,
+                        "source": None,
+                        "target_handle": None,
+                        "source_handle": None,
+                        "label": None,
+                        "field": None,
+                    }
+                ]
+            },
+            {
+                "actions": [
+                    {
+                        "op": "Move",
+                        "targets": ["n1"],
+                        "delta": {"dx": 80, "dy": 0},
+                        "id": None,
+                        "object_type": None,
+                        "geometry": None,
+                        "text": None,
+                        "selected": None,
+                        "mode": None,
+                        "target": None,
+                        "source": None,
+                        "target_handle": None,
+                        "source_handle": None,
+                        "label": None,
+                        "field": None,
+                    }
+                ]
+            },
+        ]
+
+        result = plan_actions_with_llm(
+            "move the selected note to the right",
+            sample_canvas_state(),
+        )
+
+        self.assertEqual(result["actions"][0]["delta"], {"dx": 80, "dy": 0})
+        self.assertEqual(len(result["failureLog"]), 1)
+        self.assertIn("$.delta is required", result["failureLog"][0]["error"])
+
 
 class ExecutorBehaviorTests(unittest.TestCase):
     def test_annotate_auto_resizes_text_label_and_undo_restores_geometry(self):

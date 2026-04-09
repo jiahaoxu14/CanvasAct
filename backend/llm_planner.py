@@ -20,7 +20,7 @@ from canvas_state import empty_canvas_state, validate_canvas_state
 
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
 DEFAULT_ACTION_MODEL = "gpt-5.4"
-ACTION_PLANNING_MAX_ATTEMPTS = 2
+ACTION_PLANNING_MAX_ATTEMPTS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -780,6 +780,7 @@ def build_action_system_prompt(canvas_state: dict) -> str:
             "Use AVAILABLE_NEW_IDS_JSON for any new object or connector ID.",
             "Every targets array must be non-empty.",
             "Connect actions must include both source and target.",
+            "Move actions must include delta with numeric dx and dy.",
             "Move, Resize, and Create must keep object geometry inside CANVAS_BOUNDS.",
             "Annotate on a text-label automatically resizes the label to fit the updated text.",
             "Do not include fields that are irrelevant for the chosen op.",
@@ -820,6 +821,10 @@ def build_action_user_prompt(
 def _repair_hints_for_error(validation_error: str) -> List[str]:
     hints = []
     lowered = validation_error.lower()
+    if ".delta is required" in validation_error or "delta is required" in lowered:
+        hints.append(
+            "Move actions must include delta as an object with numeric dx and dy."
+        )
     if "outside canvas bounds" in lowered:
         hints.append(
             "Move, Resize, and Create actions must keep object geometry inside CANVAS_BOUNDS."
