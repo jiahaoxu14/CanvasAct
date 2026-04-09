@@ -1,0 +1,120 @@
+:root {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: #17222e;
+  background:
+    radial-gradient(circle at top, rgba(106, 157, 255, 0.18), transparent 30%),
+    linear-gradient(160deg, #f7f2e8 0%, #fefcf8 45%, #e7eef6 100%);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+code {
+  font-family: "SFMono-Regular", "SF Mono", Consolas, monospace;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  gap: 2rem;
+  min-height: 100vh;
+  padding: 3rem 1.5rem;
+  align-content: center;
+  width: min(960px, 100%);
+  margin: 0 auto;
+}
+
+.hero,
+.status-card {
+  padding: 2rem;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(23, 34, 46, 0.08);
+  box-shadow: 0 18px 60px rgba(46, 69, 97, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+  color: #8c4a2f;
+}
+
+.hero h1,
+.status-card h2 {
+  margin: 0;
+}
+
+.hero h1 {
+  font-size: clamp(2.4rem, 8vw, 4.8rem);
+  line-height: 0.95;
+  max-width: 10ch;
+}
+
+.lede {
+  margin: 1.25rem 0 0;
+  max-width: 56ch;
+  font-size: 1.05rem;
+}
+
+.status-card {
+  max-width: 420px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.badge-ok {
+  color: #0d5f46;
+  background: #d8f6ea;
+}
+
+.badge-checking,
+.badge-loading {
+  color: #725000;
+  background: #fff3ca;
+}
+
+.badge-error {
+  color: #8f1d38;
+  background: #ffd9e2;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 1.25rem;
+  }
+
+  .hero,
+  .status-card {
+    padding: 1.5rem;
+  }
+}
