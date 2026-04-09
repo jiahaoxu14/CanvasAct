@@ -11,6 +11,7 @@ from canvas_actions import (
     ACTION_SCHEMAS,
     execute_action_batch,
     get_action_catalog,
+    HANDLE_VALUES,
     validate_action_request,
     validate_against_schema,
 )
@@ -18,6 +19,7 @@ from canvas_state import empty_canvas_state, validate_canvas_state
 
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
 DEFAULT_ACTION_MODEL = "gpt-5.4"
+ACTION_PLANNING_MAX_ATTEMPTS = 2
 REFERENCE_KIND_PATTERN = (
     r"notes?|objects?|items?|cards?|labels?|text labels?|frames?|groups?|boxes?|"
     r"lanes?|connectors?|arrows?|edges?"
@@ -63,24 +65,93 @@ class LLMPlannerUpstreamError(LLMPlannerError):
     pass
 
 
+def _nullable_string_schema(*, enum: Optional[List[Optional[str]]] = None) -> dict:
+    schema = {"type": ["string", "null"]}
+    if enum is not None:
+        schema["enum"] = enum
+    return schema
+
+
+def _nullable_number_schema() -> dict:
+    return {"type": ["number", "null"]}
+
+
+def _nullable_boolean_schema() -> dict:
+    return {"type": ["boolean", "null"]}
+
+
+def _nullable_array_of_strings_schema() -> dict:
+    return {
+        "type": ["array", "null"],
+        "items": {"type": "string"},
+    }
+
+
+def _nullable_geometry_schema() -> dict:
+    return {
+        "type": ["object", "null"],
+        "properties": {
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "w": {"type": "number"},
+            "h": {"type": "number"},
+        },
+        "required": ["x", "y", "w", "h"],
+        "additionalProperties": False,
+    }
+
+
+def _nullable_delta_schema() -> dict:
+    return {
+        "type": ["object", "null"],
+        "properties": {
+            "dx": {"type": "number"},
+            "dy": {"type": "number"},
+        },
+        "required": ["dx", "dy"],
+        "additionalProperties": False,
+    }
+
+
 def _build_action_output_item_schema() -> dict:
     properties = {
         "op": {
             "type": "string",
             "enum": list(ACTION_ORDER),
         },
+        "id": _nullable_string_schema(),
+        "object_type": _nullable_string_schema(
+            enum=["sticky-note", "text-label", "frame", None],
+        ),
+        "geometry": _nullable_geometry_schema(),
+        "text": _nullable_string_schema(),
+        "title": _nullable_string_schema(),
+        "parent_frame_id": _nullable_string_schema(),
+        "selected": _nullable_boolean_schema(),
+        "targets": _nullable_array_of_strings_schema(),
+        "mode": _nullable_string_schema(
+            enum=["replace", "add", "remove", "toggle", None],
+        ),
+        "delta": _nullable_delta_schema(),
+        "target": _nullable_string_schema(),
+        "frame_id": _nullable_string_schema(),
+        "source": _nullable_string_schema(),
+        "target_handle": _nullable_string_schema(
+            enum=[*HANDLE_VALUES, None],
+        ),
+        "source_handle": _nullable_string_schema(
+            enum=[*HANDLE_VALUES, None],
+        ),
+        "label": _nullable_string_schema(),
+        "field": _nullable_string_schema(
+            enum=["text", "title", "label", None],
+        ),
     }
-
-    for action_schema in ACTION_SCHEMAS.values():
-        for key, value in action_schema["properties"].items():
-            if key == "op" or key in properties:
-                continue
-            properties[key] = deepcopy(value)
 
     return {
         "type": "object",
         "properties": properties,
-        "required": ["op"],
+        "required": list(properties.keys()),
         "additionalProperties": False,
     }
 
@@ -114,7 +185,7 @@ SUBGOAL_RESPONSE_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "subgoal": {"type": "string", "minLength": 1},
+                    "subgoal": {"type": "string"},
                 },
                 "required": ["subgoal"],
                 "additionalProperties": False,
@@ -808,6 +879,7 @@ def build_action_system_prompt(canvas_state: dict) -> str:
             "- Prefer the provided available new IDs when creating objects, frames, or connectors.",
             "- A deterministic reference resolver runs before you. Treat its resolved candidate IDs as grounding hints and do not override them with invented grounding.",
             "- If a reference is ambiguous, stay within the listed candidate IDs. Do not fabricate a different existing object.",
+            "- For GroupIntoFrame, use an existing frame only if every target object fits inside that frame. If it does not fit, create a new frame with an unused frame_id instead of forcing the existing one.",
             "- source, target, targets, parent_frame_id, and frame_id must refer to IDs that exist in the current canvas or are created earlier in the same action list.",
             "- Keep the action list minimal and valid against the current canvas state.",
             "",
@@ -816,16 +888,43 @@ def build_action_system_prompt(canvas_state: dict) -> str:
     )
 
 
-def build_action_user_prompt(subgoal: str, reference_resolution: dict) -> str:
-    return "\n".join(
-        [
-            "Convert this single subgoal into atomic whiteboard actions:",
-            subgoal,
-            "",
-            "Use the deterministic grounding output below when resolving references:",
-            _reference_context_for_prompt(reference_resolution),
-        ]
-    )
+def build_action_user_prompt(
+    subgoal: str,
+    reference_resolution: dict,
+    *,
+    previous_actions: Optional[List[dict]] = None,
+    validation_error: Optional[str] = None,
+) -> str:
+    prompt_lines = [
+        "Convert this single subgoal into atomic whiteboard actions:",
+        subgoal,
+        "",
+        "Use the deterministic grounding output below when resolving references:",
+        _reference_context_for_prompt(reference_resolution),
+    ]
+
+    if validation_error:
+        prompt_lines.extend(
+            [
+                "",
+                "The previous candidate action plan was invalid for the current canvas state.",
+                "Return a corrected atomic action list only.",
+                f"VALIDATION_ERROR: {validation_error}",
+            ]
+        )
+        repair_hint = _build_validation_repair_hint(validation_error)
+        if repair_hint:
+            prompt_lines.append(f"REPAIR_HINT: {repair_hint}")
+
+    if previous_actions:
+        prompt_lines.extend(
+            [
+                "PREVIOUS_INVALID_ACTIONS_JSON:",
+                json.dumps(previous_actions, indent=2, sort_keys=True),
+            ]
+        )
+
+    return "\n".join(prompt_lines)
 
 
 def _extract_response_text(response_payload: dict) -> str:
@@ -939,27 +1038,122 @@ def validate_subgoal_response(payload: object) -> dict:
         raise LLMPlannerUpstreamError(
             f"Subgoal response did not match the schema: {exc}"
         ) from exc
+    for entry in payload["subgoals"]:
+        if not entry["subgoal"].strip():
+            raise LLMPlannerUpstreamError(
+                "Subgoal response contained an empty subgoal."
+            )
     return payload
 
 
+def _current_entity_collections(canvas_state: dict) -> Dict[str, str]:
+    collections = {}
+    for collection_name in ("objects", "frames", "connectors"):
+        for entity in canvas_state[collection_name]:
+            collections[entity["id"]] = collection_name
+    return collections
+
+
+def _collection_for_created_action(action: dict) -> Optional[str]:
+    if action.get("op") == "Create":
+        if action.get("object_type") == "frame":
+            return "frames"
+        return "objects"
+    if action.get("op") == "Connect":
+        return "connectors"
+    return None
+
+
+def _normalize_llm_action_response_payload(payload: dict) -> dict:
+    action_properties = ACTION_RESPONSE_SCHEMA["properties"]["actions"]["items"]["properties"]
+    normalized_actions = []
+
+    for raw_action in payload.get("actions", []):
+        normalized_action = {
+            key: raw_action.get(key)
+            for key in action_properties.keys()
+        }
+        normalized_actions.append(normalized_action)
+
+    return {"actions": normalized_actions}
+
+
+def _canonicalize_action_payload(raw_payload: dict) -> dict:
+    actions = []
+    for raw_action in raw_payload["actions"]:
+        canonical_action = {
+            key: value
+            for key, value in raw_action.items()
+            if value is not None
+        }
+        actions.append(canonical_action)
+    return {"actions": actions}
+
+
+def _deterministically_repair_actions(
+    execution_request: dict,
+    canvas_state: dict,
+) -> dict:
+    repaired_request = deepcopy(execution_request)
+    known_entity_collections = _current_entity_collections(canvas_state)
+
+    for action in repaired_request["actions"]:
+        if action["op"] == "GroupIntoFrame":
+            filtered_targets = [
+                entity_id
+                for entity_id in action.get("targets", [])
+                if known_entity_collections.get(entity_id) == "objects"
+            ]
+            deduped_targets = list(dict.fromkeys(filtered_targets))
+            if deduped_targets:
+                action["targets"] = deduped_targets
+
+        created_collection = _collection_for_created_action(action)
+        created_id = action.get("id")
+        if created_collection and created_id:
+            known_entity_collections[created_id] = created_collection
+
+    return repaired_request
+
+
+def _build_validation_repair_hint(validation_error: str) -> Optional[str]:
+    if "GroupIntoFrame" in validation_error and "is not valid for this action" in validation_error:
+        return (
+            "For GroupIntoFrame, targets must contain object ids only. "
+            "Do not include frame ids or connector ids in targets. "
+            "Put the destination frame only in frame_id."
+        )
+    if "GroupIntoFrame" in validation_error and "too large for frame" in validation_error:
+        return (
+            "Do not group into an existing frame that cannot contain every target object. "
+            "Use a new unused frame_id instead."
+        )
+    return None
+
+
 def validate_action_response(payload: object, canvas_state: dict) -> dict:
+    normalized_payload = _normalize_llm_action_response_payload(payload)
     try:
-        validate_against_schema(ACTION_RESPONSE_SCHEMA, payload)
+        validate_against_schema(ACTION_RESPONSE_SCHEMA, normalized_payload)
     except Exception as exc:
         raise LLMPlannerUpstreamError(
             f"Atomic action response did not match the schema: {exc}"
         ) from exc
 
-    execution_request = {"actions": payload["actions"]}
+    execution_request = _canonicalize_action_payload(normalized_payload)
+    execution_request = _deterministically_repair_actions(
+        execution_request,
+        canvas_state,
+    )
     try:
         validate_action_request(execution_request)
-        execute_action_batch(canvas_state, payload["actions"])
+        execute_action_batch(canvas_state, execution_request["actions"])
     except Exception as exc:
         raise LLMPlannerUpstreamError(
             f"Atomic action response was invalid for the current canvas state: {exc}"
         ) from exc
 
-    return payload
+    return execution_request
 
 
 def plan_subgoals_with_llm(user_prompt: str, canvas_state: dict) -> dict:
@@ -981,17 +1175,44 @@ def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
         subgoal,
         validated_canvas_state,
     )
-    response_payload = _call_openai_json(
-        model=_get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL),
-        schema_name="whiteboard_actions",
-        response_schema=ACTION_RESPONSE_SCHEMA,
-        system_prompt=build_action_system_prompt(validated_canvas_state),
-        user_prompt=build_action_user_prompt(subgoal, reference_resolution),
-        max_output_tokens=1400,
+    system_prompt = build_action_system_prompt(validated_canvas_state)
+    current_user_prompt = build_action_user_prompt(
+        subgoal,
+        reference_resolution,
     )
-    validated_response = validate_action_response(
-        response_payload,
-        validated_canvas_state,
+    last_validation_error = None
+
+    for attempt in range(ACTION_PLANNING_MAX_ATTEMPTS):
+        response_payload = _call_openai_json(
+            model=_get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL),
+            schema_name="whiteboard_actions",
+            response_schema=ACTION_RESPONSE_SCHEMA,
+            system_prompt=system_prompt,
+            user_prompt=current_user_prompt,
+            max_output_tokens=1400,
+        )
+
+        try:
+            validated_response = validate_action_response(
+                response_payload,
+                validated_canvas_state,
+            )
+            validated_response["referenceResolution"] = reference_resolution
+            if last_validation_error is not None:
+                validated_response["repairAttempted"] = True
+            return validated_response
+        except LLMPlannerUpstreamError as exc:
+            last_validation_error = str(exc)
+            if attempt == ACTION_PLANNING_MAX_ATTEMPTS - 1:
+                raise
+
+            current_user_prompt = build_action_user_prompt(
+                subgoal,
+                reference_resolution,
+                previous_actions=response_payload.get("actions", []),
+                validation_error=last_validation_error,
+            )
+
+    raise LLMPlannerUpstreamError(
+        "Atomic action planning failed after all repair attempts."
     )
-    validated_response["referenceResolution"] = reference_resolution
-    return validated_response

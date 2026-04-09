@@ -565,6 +565,11 @@ function Whiteboard() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [mode, setMode] = useState("select");
   const [chatPrompt, setChatPrompt] = useState("");
+  const [plannerState, setPlannerState] = useState({
+    status: "idle",
+    message: "Describe a task to preview subgoals and atomic actions.",
+  });
+  const [planPreview, setPlanPreview] = useState(null);
   const [syncState, setSyncState] = useState({
     status: "idle",
     message: "Scene graph has not been sent yet.",
@@ -597,6 +602,7 @@ function Whiteboard() {
     selectedContentNodes.length > 0 && selectedFrames.length <= 1;
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
+  const isPlanning = plannerState.status === "planning";
   const sceneGraph = buildSceneGraph(nodes, edges, viewport);
   const sceneGraphJson = JSON.stringify(sceneGraph, null, 2);
 
@@ -991,8 +997,110 @@ function Whiteboard() {
     }
   }
 
-  function handlePromptSubmit(event) {
+  async function postJson(endpoint, payload, fallbackMessage) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const responsePayload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(responsePayload.message ?? fallbackMessage);
+    }
+
+    return responsePayload;
+  }
+
+  async function handlePromptSubmit(event) {
     event.preventDefault();
+
+    const trimmedPrompt = chatPrompt.trim();
+    if (!trimmedPrompt) {
+      return;
+    }
+
+    setPlannerState({
+      status: "planning",
+      message: "Decomposing prompt into subgoals...",
+    });
+    setPlanPreview(null);
+
+    try {
+      let workingCanvasState = cloneSnapshotData(sceneGraph);
+      const subgoalPayload = await postJson(
+        "/api/llm/subgoals",
+        {
+          prompt: trimmedPrompt,
+          canvasState: workingCanvasState,
+        },
+        "Failed to generate subgoals.",
+      );
+
+      const steps = [];
+
+      for (const [index, entry] of subgoalPayload.subgoals.entries()) {
+        setPlannerState({
+          status: "planning",
+          message: `Planning actions for subgoal ${index + 1} of ${subgoalPayload.subgoals.length}...`,
+        });
+
+        const actionPayload = await postJson(
+          "/api/llm/actions",
+          {
+            subgoal: entry.subgoal,
+            canvasState: workingCanvasState,
+          },
+          "Failed to generate atomic actions.",
+        );
+
+        const previewPayload = await postJson(
+          "/api/canvas-actions",
+          {
+            actions: actionPayload.actions,
+            dry_run: true,
+            canvasState: workingCanvasState,
+          },
+          "Failed to simulate planned actions.",
+        );
+
+        steps.push({
+          id: `plan-step-${index + 1}`,
+          subgoal: entry.subgoal,
+          actions: actionPayload.actions,
+          referenceResolution: actionPayload.referenceResolution ?? {
+            resolvedReferences: [],
+            ambiguousReferences: [],
+            unresolvedReferences: [],
+          },
+        });
+
+        workingCanvasState = previewPayload.canvasState;
+      }
+
+      const totalActions = steps.reduce(
+        (sum, step) => sum + step.actions.length,
+        0,
+      );
+
+      setPlanPreview({
+        prompt: trimmedPrompt,
+        steps,
+        finalCanvasState: workingCanvasState,
+        totalActions,
+      });
+      setPlannerState({
+        status: "success",
+        message: `Planned ${steps.length} subgoal(s) and ${totalActions} action(s). Review the preview before execution.`,
+      });
+    } catch (error) {
+      setPlannerState({
+        status: "error",
+        message: error.message,
+      });
+    }
   }
 
   useEffect(() => {
@@ -1215,8 +1323,76 @@ function Whiteboard() {
               placeholder="Describe the next whiteboard action..."
               aria-label="Chat prompt"
             />
-            <button type="submit">Send</button>
+            <button type="submit" disabled={isPlanning || !chatPrompt.trim()}>
+              {isPlanning ? "Planning..." : "Send"}
+            </button>
           </form>
+
+          <div
+            className={`sync-status sync-status-${
+              plannerState.status === "planning"
+                ? "sending"
+                : plannerState.status
+            }`}
+          >
+            {plannerState.message}
+          </div>
+
+          {planPreview ? (
+            <section className="plan-preview">
+              <div className="plan-preview-header">
+                <div className="section-label">Plan Preview</div>
+                <div className="scene-meta">
+                  <span>{planPreview.steps.length} subgoal(s)</span>
+                  <span>{planPreview.totalActions} action(s)</span>
+                </div>
+              </div>
+              <p className="panel-copy compact">{planPreview.prompt}</p>
+              <div className="plan-step-list">
+                {planPreview.steps.map((step, index) => (
+                  <article key={step.id} className="plan-step">
+                    <div className="plan-step-header">
+                      <span className="mode-pill">Subgoal {index + 1}</span>
+                      <span className="plan-step-meta">
+                        {step.actions.length} action(s)
+                      </span>
+                    </div>
+                    <div className="plan-step-copy">{step.subgoal}</div>
+
+                    {step.referenceResolution.resolvedReferences.length > 0 ? (
+                      <div className="plan-step-grounding">
+                        {step.referenceResolution.resolvedReferences.map(
+                          (reference) => (
+                            <div
+                              key={`${step.id}-${reference.rule}-${reference.surfaceText}`}
+                              className="plan-step-grounding-item"
+                            >
+                              <code>{reference.surfaceText}</code>
+                              {" -> "}
+                              <code>{reference.candidateIds.join(", ")}</code>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : null}
+
+                    {step.referenceResolution.ambiguousReferences.length > 0 ? (
+                      <div className="plan-step-warning">
+                        Ambiguous references:{" "}
+                        {step.referenceResolution.ambiguousReferences
+                          .map((reference) => reference.surfaceText)
+                          .join(", ")}
+                      </div>
+                    ) : null}
+
+                    <pre className="plan-json">
+                      {JSON.stringify(step.actions, null, 2)}
+                    </pre>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </Panel>
 
         <Panel position="bottom-right" className="flow-panel scene-panel">

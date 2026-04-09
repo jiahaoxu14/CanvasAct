@@ -96,21 +96,37 @@ def create_app() -> Flask:
                 400,
             )
 
-        validation_error = validate_canvas_state(app.config["LATEST_CANVAS_STATE"])
-        if validation_error:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": f"Stored canvas state is invalid: {validation_error}",
-                    }
-                ),
-                500,
-            )
+        provided_canvas_state = payload.get("canvasState")
+        if provided_canvas_state is not None:
+            base_canvas_state = deepcopy(provided_canvas_state)
+            validation_error = validate_canvas_state(base_canvas_state)
+            if validation_error:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Provided canvas state is invalid: {validation_error}",
+                        }
+                    ),
+                    400,
+                )
+        else:
+            base_canvas_state = app.config["LATEST_CANVAS_STATE"]
+            validation_error = validate_canvas_state(base_canvas_state)
+            if validation_error:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Stored canvas state is invalid: {validation_error}",
+                        }
+                    ),
+                    500,
+                )
 
         try:
             execution_result = execute_action_batch(
-                app.config["LATEST_CANVAS_STATE"],
+                base_canvas_state,
                 payload["actions"],
             )
         except CanvasActionError as exc:
@@ -125,7 +141,7 @@ def create_app() -> Flask:
             )
 
         dry_run = payload.get("dry_run", False)
-        if not dry_run:
+        if not dry_run and provided_canvas_state is None:
             app.config["LATEST_CANVAS_STATE"] = execution_result["canvas_state"]
 
         return jsonify(

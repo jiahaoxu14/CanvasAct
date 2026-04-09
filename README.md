@@ -40,7 +40,7 @@ This starts the Flask backend and Vite frontend together. Changes in the fronten
 The backend exposes an atomic action catalog and an action executor for the canvas scene graph.
 
 - `GET /api/action-schemas`: returns the JSON schema, required fields, optional fields, preconditions, executor name, postcondition checker, and undo handler for each atomic action.
-- `POST /api/canvas-actions`: validates an action batch before execution, applies the actions to the stored canvas state, runs postcondition checks, and returns the resulting canvas state.
+- `POST /api/canvas-actions`: validates an action batch before execution, applies the actions to the stored canvas state, runs postcondition checks, and returns the resulting canvas state. It also accepts an optional `canvasState` override for dry-run previews against an explicit scene graph.
 - `POST /api/llm/subgoals`: converts a user prompt into subgoals only, using the current canvas state and the allowed action set as context.
 - `POST /api/llm/actions`: converts one subgoal into atomic actions only, validated against the current canvas state.
 

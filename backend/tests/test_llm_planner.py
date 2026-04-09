@@ -107,6 +107,7 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("AVAILABLE_NEW_OBJECT_IDS", prompt)
         self.assertIn("Create", prompt)
         self.assertIn("Delete", prompt)
+        self.assertIn("use an existing frame only if every target object fits", prompt)
         self.assertIn("Convert this single subgoal into atomic whiteboard actions:", user_prompt)
         self.assertIn('"candidateIds": [', user_prompt)
         self.assertIn('"n1"', user_prompt)
@@ -231,6 +232,69 @@ class PlannerValidationTests(unittest.TestCase):
         self.assertEqual(result["actions"][0]["op"], "GroupIntoFrame")
         self.assertIn("referenceResolution", result)
 
+    def test_validate_action_response_repairs_frame_ids_in_group_targets(self):
+        validated = validate_action_response(
+            {
+                "actions": [
+                    {
+                        "op": "GroupIntoFrame",
+                        "targets": ["f1", "n1", "n2"],
+                        "frame_id": "f1",
+                        "title": "Themes",
+                    }
+                ]
+            },
+            sample_canvas_state(),
+        )
+
+        self.assertEqual(
+            validated["actions"][0]["targets"],
+            ["n1", "n2"],
+        )
+
+    @patch(
+        "llm_planner._call_openai_json",
+        side_effect=[
+            {
+                "actions": [
+                    {
+                        "op": "GroupIntoFrame",
+                        "targets": ["n1", "n2"],
+                        "frame_id": "f1",
+                        "title": "Themes",
+                    }
+                ]
+            },
+            {
+                "actions": [
+                    {
+                        "op": "GroupIntoFrame",
+                        "targets": ["n1", "n2"],
+                        "frame_id": "frame-3",
+                        "title": "Themes",
+                    }
+                ]
+            },
+        ],
+    )
+    def test_plan_actions_repairs_invalid_group_into_frame(self, mock_call):
+        constrained_state = sample_canvas_state()
+        constrained_state["frames"][0]["geometry"] = {
+            "x": 80,
+            "y": 60,
+            "w": 200,
+            "h": 150,
+        }
+
+        result = plan_actions_with_llm(
+            "group these notes into themes",
+            constrained_state,
+        )
+
+        self.assertEqual(mock_call.call_count, 2)
+        self.assertEqual(result["actions"][0]["frame_id"], "frame-3")
+        self.assertTrue(result["repairAttempted"])
+
 
 class PlannerEndpointTests(unittest.TestCase):
     def setUp(self):
@@ -328,6 +392,28 @@ class PlannerEndpointTests(unittest.TestCase):
                 },
                 "ambiguousReferences": [],
             },
+        )
+
+    def test_canvas_actions_accepts_canvas_state_override_for_preview(self):
+        response = self.client.post(
+            "/api/canvas-actions",
+            json={
+                "dry_run": True,
+                "canvasState": sample_canvas_state(),
+                "actions": [
+                    {
+                        "op": "Move",
+                        "targets": ["n1"],
+                        "delta": {"dx": 40, "dy": 0},
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["canvasState"]["objects"][0]["geometry"]["x"],
+            160,
         )
 
 

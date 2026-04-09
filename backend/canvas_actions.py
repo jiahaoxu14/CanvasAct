@@ -63,6 +63,7 @@ ACTIONS_REQUEST_SCHEMA = {
             "items": {"type": "object"},
         },
         "dry_run": {"type": "boolean"},
+        "canvasState": {"type": "object"},
     },
     "required": ["actions"],
     "additionalProperties": False,
@@ -219,7 +220,9 @@ def _json_signature(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _schema_type_matches(expected_type: str, value: Any) -> bool:
+def _schema_type_matches(expected_type: Any, value: Any) -> bool:
+    if isinstance(expected_type, (list, tuple)):
+        return any(_schema_type_matches(item, value) for item in expected_type)
     if expected_type == "object":
         return isinstance(value, dict)
     if expected_type == "array":
@@ -230,6 +233,8 @@ def _schema_type_matches(expected_type: str, value: Any) -> bool:
         return _is_number(value)
     if expected_type == "boolean":
         return isinstance(value, bool)
+    if expected_type == "null":
+        return value is None
     return False
 
 
@@ -240,6 +245,12 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
         )
 
     expected_type = schema.get("type")
+    resolved_type = expected_type
+    if isinstance(expected_type, (list, tuple)):
+        resolved_type = next(
+            (candidate for candidate in expected_type if _schema_type_matches(candidate, value)),
+            None,
+        )
     if expected_type and not _schema_type_matches(expected_type, value):
         raise CanvasActionSchemaError(
             f"{path} must be of type '{expected_type}'."
@@ -251,14 +262,14 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
             f"{path} must be one of {enum_values}."
         )
 
-    if expected_type == "string":
+    if resolved_type == "string":
         min_length = schema.get("minLength")
         if min_length is not None and len(value) < min_length:
             raise CanvasActionSchemaError(
                 f"{path} must have at least {min_length} characters."
             )
 
-    if expected_type == "number":
+    if resolved_type == "number":
         minimum = schema.get("minimum")
         if minimum is not None and value < minimum:
             raise CanvasActionSchemaError(
@@ -270,7 +281,7 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
                 f"{path} must be greater than {exclusive_minimum}."
             )
 
-    if expected_type == "array":
+    if resolved_type == "array":
         min_items = schema.get("minItems")
         if min_items is not None and len(value) < min_items:
             raise CanvasActionSchemaError(
@@ -289,7 +300,7 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
             for index, item in enumerate(value):
                 validate_against_schema(item_schema, item, f"{path}[{index}]")
 
-    if expected_type == "object":
+    if resolved_type == "object":
         required = schema.get("required", [])
         for key in required:
             if key not in value:
