@@ -871,10 +871,12 @@ def _record_layout_affected_object_ids(
     action: dict,
     action_context: dict,
     rule_effects: List[RuleEffect],
-    order_map: Dict[str, int],
+    batch_metadata: dict,
     action_index: int,
     state: dict,
 ) -> None:
+    order_map = batch_metadata["layout_affected_order_map"]
+    connector_order_map = batch_metadata["connector_affected_order_map"]
     affected_ids = []
     if action["op"] == "Create":
         affected_ids = [action["id"]]
@@ -887,6 +889,8 @@ def _record_layout_affected_object_ids(
             result = find_entity(state, action["target"])
             if result is not None and result[0] == "objects":
                 affected_ids = [action["target"]]
+    elif action["op"] == "Connect":
+        connector_order_map.setdefault(action["id"], action_index)
 
     for object_id in affected_ids:
         order_map.setdefault(object_id, action_index)
@@ -897,7 +901,12 @@ def _extract_layout_adjustments(rule_effects: List[RuleEffect]) -> List[dict]:
     ordered_ids = []
 
     for effect in rule_effects:
-        if effect.rule not in {"no_overlap_layout", "alignment_layout"}:
+        if effect.rule not in {
+            "no_overlap_layout",
+            "alignment_layout",
+            "equalize_cluster_spacing",
+            "heading_placement",
+        }:
             continue
         if "id" not in effect.details or "from" not in effect.details or "to" not in effect.details:
             continue
@@ -941,6 +950,8 @@ def execute_action_batch(
     batch_rule_effects: List[RuleEffect] = []
     batch_metadata = {
         "layout_affected_order_map": {},
+        "connector_affected_order_map": {},
+        "layout_adjusted_ids": [],
     }
     options = {
         "layoutPolicy": layout_policy,
@@ -982,7 +993,7 @@ def execute_action_batch(
                 action,
                 action_context,
                 action_rule_effects,
-                batch_metadata["layout_affected_order_map"],
+                batch_metadata,
                 index,
                 working_state,
             )
@@ -1046,6 +1057,26 @@ def execute_action_batch(
 
 def _undo_rule_effect(state: dict, effect: RuleEffect) -> None:
     if effect.kind != "restore_geometry":
+        if effect.kind == "restore_connector_handles":
+            connector_id = effect.undo_payload.get("connectorId")
+            source_handle = effect.undo_payload.get("sourceHandle")
+            target_handle = effect.undo_payload.get("targetHandle")
+            if not isinstance(connector_id, str):
+                raise CanvasActionPreconditionError(
+                    "Rule effect undo payload is invalid.",
+                    error_code="invalid_rule_effect_payload",
+                    error_details={"rule": effect.rule},
+                )
+
+            result = find_entity(state, connector_id)
+            if result is None or result[0] != "connectors":
+                return
+
+            connector = result[2]
+            connector["sourceHandle"] = source_handle
+            connector["targetHandle"] = target_handle
+            return
+
         raise CanvasActionPreconditionError(
             f"Unsupported rule effect kind {effect.kind!r} during undo.",
             error_code="unsupported_rule_effect",

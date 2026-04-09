@@ -47,3 +47,28 @@ def restore_geometry_effect(
             "afterGeometry": after_geometry,
         },
     )
+
+
+def restore_connector_handles_effect(
+    rule: CanvasRule,
+    context: RuleContext,
+    *,
+    connector_id: str,
+    before_handles: dict,
+    after_handles: dict,
+) -> RuleEffect:
+    return RuleEffect(
+        rule=rule.name,
+        phase=context.phase,
+        kind="restore_connector_handles",
+        undo_payload={
+            "connectorId": connector_id,
+            "sourceHandle": before_handles["sourceHandle"],
+            "targetHandle": before_handles["targetHandle"],
+        },
+        details={
+            "connectorId": connector_id,
+            "beforeHandles": dict(before_handles),
+            "afterHandles": dict(after_handles),
+        },
+    )

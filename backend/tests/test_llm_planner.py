@@ -110,6 +110,15 @@ def full_canvas_state() -> dict:
     }
 
 
+def blank_canvas_state() -> dict:
+    return {
+        "objects": [],
+        "connectors": [],
+        "viewport": {"x": 0, "y": 0, "zoom": 1.0},
+        "selection": [],
+    }
+
+
 def rectangles_overlap(first: dict, second: dict, spacing: int = 24) -> bool:
     return not (
         first["x"] + first["w"] + spacing <= second["x"]
@@ -179,6 +188,9 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("Avoid overlapping existing objects", prompt)
         self.assertIn("simple rows or columns", prompt)
         self.assertIn("aligned rows or columns", prompt)
+        self.assertIn("keep note spacing consistent", prompt)
+        self.assertIn("Place text labels as headings above", prompt)
+        self.assertIn("Reduce connector crossings", prompt)
         self.assertNotIn("frame", prompt.lower())
         self.assertIn("Convert this single subgoal into atomic whiteboard actions:", user_prompt)
         self.assertIn('"candidateIds": [', user_prompt)
@@ -836,6 +848,155 @@ class ExecutorBehaviorTests(unittest.TestCase):
         self.assertEqual(len(result["layout_adjustments"]), 1)
         self.assertIn("alignment_layout", result["layout_adjustments"][0]["rules"])
         assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_equalizes_spacing_and_places_heading(self):
+        result = execute_action_batch(
+            blank_canvas_state(),
+            [
+                {
+                    "op": "Create",
+                    "id": "n1",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 1000, "y": 900, "w": 180, "h": 100},
+                    "text": "Flights",
+                },
+                {
+                    "op": "Create",
+                    "id": "n2",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 1280, "y": 915, "w": 180, "h": 100},
+                    "text": "Hotel",
+                },
+                {
+                    "op": "Create",
+                    "id": "n3",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 1620, "y": 897, "w": 180, "h": 100},
+                    "text": "Tickets",
+                },
+                {
+                    "op": "Create",
+                    "id": "label-1",
+                    "object_type": "text-label",
+                    "geometry": {"x": 1500, "y": 950, "w": 220, "h": 80},
+                    "text": "Booking",
+                },
+            ],
+            layout_policy="no-overlap",
+        )
+
+        objects = {
+            item["id"]: item
+            for item in result["canvas_state"]["objects"]
+        }
+        gap_1 = objects["n2"]["geometry"]["x"] - (
+            objects["n1"]["geometry"]["x"] + objects["n1"]["geometry"]["w"]
+        )
+        gap_2 = objects["n3"]["geometry"]["x"] - (
+            objects["n2"]["geometry"]["x"] + objects["n2"]["geometry"]["w"]
+        )
+        self.assertEqual(gap_1, gap_2)
+        self.assertLess(
+            objects["label-1"]["geometry"]["y"],
+            min(objects["n1"]["geometry"]["y"], objects["n2"]["geometry"]["y"], objects["n3"]["geometry"]["y"]),
+        )
+        self.assertEqual(
+            objects["label-1"]["geometry"]["x"],
+            min(objects["n1"]["geometry"]["x"], objects["n2"]["geometry"]["x"], objects["n3"]["geometry"]["x"]),
+        )
+        label_adjustment = next(
+            item
+            for item in result["layout_adjustments"]
+            if item["id"] == "label-1"
+        )
+        self.assertIn("heading_placement", label_adjustment["rules"])
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_improves_connector_handles_and_undo_restores_them(self):
+        initial_state = {
+            "objects": [
+                {
+                    "id": "a",
+                    "type": "sticky-note",
+                    "content": {"text": "A"},
+                    "geometry": {"x": 100, "y": 100, "w": 180, "h": 100},
+                },
+                {
+                    "id": "b",
+                    "type": "sticky-note",
+                    "content": {"text": "B"},
+                    "geometry": {"x": 420, "y": 320, "w": 180, "h": 100},
+                },
+                {
+                    "id": "c",
+                    "type": "sticky-note",
+                    "content": {"text": "C"},
+                    "geometry": {"x": 100, "y": 320, "w": 180, "h": 100},
+                },
+                {
+                    "id": "d",
+                    "type": "sticky-note",
+                    "content": {"text": "D"},
+                    "geometry": {"x": 420, "y": 100, "w": 180, "h": 100},
+                },
+            ],
+            "connectors": [
+                {
+                    "id": "c1",
+                    "type": "connector",
+                    "content": {"label": ""},
+                    "source": "a",
+                    "target": "b",
+                    "sourceHandle": "right",
+                    "targetHandle": "left",
+                    "geometry": None,
+                },
+                {
+                    "id": "c2",
+                    "type": "connector",
+                    "content": {"label": ""},
+                    "source": "c",
+                    "target": "d",
+                    "sourceHandle": "right",
+                    "targetHandle": "left",
+                    "geometry": None,
+                },
+            ],
+            "viewport": {"x": 0, "y": 0, "zoom": 1.0},
+            "selection": [],
+        }
+
+        result = execute_action_batch(
+            initial_state,
+            [
+                {
+                    "op": "Move",
+                    "targets": ["d"],
+                    "delta": {"dx": 0, "dy": 0},
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        updated_connector = next(
+            item for item in result["canvas_state"]["connectors"] if item["id"] == "c2"
+        )
+        self.assertEqual(updated_connector["sourceHandle"], "left")
+        self.assertEqual(updated_connector["targetHandle"], "top")
+        self.assertTrue(
+            any(effect.rule == "connector_readability" for effect in result["rule_effects"])
+        )
+
+        undone_state = undo_executed_actions(
+            result["canvas_state"],
+            result["executed_actions"],
+            result.get("rule_effects"),
+        )
+        restored_connector = next(
+            item for item in undone_state["connectors"] if item["id"] == "c2"
+        )
+        self.assertEqual(restored_connector["sourceHandle"], "right")
+        self.assertEqual(restored_connector["targetHandle"], "left")
 
     def test_no_overlap_cleans_preexisting_overlap_from_untouched_objects(self):
         result = execute_action_batch(

@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 
 from flask import Flask, jsonify, request
@@ -265,4 +266,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=int(os.environ.get("BACKEND_PORT", "5000")))

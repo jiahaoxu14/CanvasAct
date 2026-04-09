@@ -1,14 +1,19 @@
 import math
 from copy import deepcopy
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .common import raise_rule_violation
+from .common import raise_rule_violation, restore_connector_handles_effect
 from .helpers import (
     ALIGNMENT_CLUSTER_TOLERANCE,
     CANVAS_BOUNDS,
+    CLUSTER_ADJACENCY_THRESHOLD,
+    HANDLE_VALUES,
+    HEADING_VERTICAL_OFFSET,
+    INTRACLUSTER_GAP,
     NO_OVERLAP_GRID_SIZE,
     geometry_fits_canvas,
     geometry_signature,
+    handle_point,
     object_ids_in_order,
     object_lookup,
     rectangles_overlap,
@@ -28,6 +33,21 @@ def _find_remaining_overlap_ids(state: dict) -> List[Tuple[str, str]]:
 
 def _grid_anchor(value: float) -> int:
     return int(round(value / NO_OVERLAP_GRID_SIZE) * NO_OVERLAP_GRID_SIZE)
+
+
+def _grid_gap(value: float) -> int:
+    return max(
+        INTRACLUSTER_GAP,
+        int(round(value / NO_OVERLAP_GRID_SIZE) * NO_OVERLAP_GRID_SIZE),
+    )
+
+
+def _layout_sort_key(entity: dict) -> Tuple[float, float, str]:
+    return (
+        entity["geometry"]["y"],
+        entity["geometry"]["x"],
+        entity["id"],
+    )
 
 
 def _candidate_geometries_on_grid(geometry: dict):
@@ -120,7 +140,7 @@ def _find_non_overlapping_geometry(
 
 
 def _sort_ids_by_layout_priority(
-    object_ids: List[str],
+    object_ids: Sequence[str],
     order_map: Dict[str, int],
 ) -> List[str]:
     return sorted(
@@ -132,12 +152,49 @@ def _sort_ids_by_layout_priority(
     )
 
 
-def _layout_sort_key(entity: dict) -> Tuple[float, float, str]:
-    return (
-        entity["geometry"]["y"],
-        entity["geometry"]["x"],
-        entity["id"],
+def _append_layout_adjusted_ids(context: RuleContext, changed_ids: Sequence[str]) -> None:
+    adjusted_ids = context.batch_metadata.setdefault("layout_adjusted_ids", [])
+    seen = set(adjusted_ids)
+    for object_id in changed_ids:
+        if object_id in seen:
+            continue
+        adjusted_ids.append(object_id)
+        seen.add(object_id)
+
+
+def _layout_target_ids(
+    context: RuleContext,
+    *,
+    object_type: Optional[str] = None,
+) -> List[str]:
+    lookup = object_lookup(context.state)
+    order_map = context.batch_metadata.get("layout_affected_order_map", {})
+    ordered_targets = _sort_ids_by_layout_priority(
+        [object_id for object_id in object_ids_in_order(context.state) if object_id in order_map],
+        order_map,
     )
+
+    seen = set()
+    targets = []
+    for object_id in ordered_targets:
+        entity = lookup.get(object_id)
+        if entity is None or object_id in seen:
+            continue
+        if object_type is not None and entity["type"] != object_type:
+            continue
+        targets.append(object_id)
+        seen.add(object_id)
+
+    for object_id in context.batch_metadata.get("layout_adjusted_ids", []):
+        entity = lookup.get(object_id)
+        if entity is None or object_id in seen:
+            continue
+        if object_type is not None and entity["type"] != object_type:
+            continue
+        targets.append(object_id)
+        seen.add(object_id)
+
+    return targets
 
 
 def _build_axis_anchors(state: dict, axis: str) -> List[int]:
@@ -242,6 +299,214 @@ def _aligned_desired_geometries(
     return unique_candidates or [deepcopy(geometry)]
 
 
+def _layout_effect_for_geometry(
+    rule: CanvasRule,
+    context: RuleContext,
+    *,
+    object_id: str,
+    before_geometry: dict,
+    after_geometry: dict,
+) -> RuleEffect:
+    return RuleEffect(
+        rule=rule.name,
+        phase=context.phase,
+        kind="restore_geometry",
+        undo_payload={
+            "entityId": object_id,
+            "geometry": before_geometry,
+        },
+        details={
+            "id": object_id,
+            "from": {
+                "x": before_geometry["x"],
+                "y": before_geometry["y"],
+            },
+            "to": {
+                "x": after_geometry["x"],
+                "y": after_geometry["y"],
+            },
+        },
+    )
+
+
+def _object_geometry_effects(
+    rule: CanvasRule,
+    context: RuleContext,
+    original_geometries: Dict[str, dict],
+    current_lookup: Dict[str, dict],
+    ordered_ids: Optional[Sequence[str]] = None,
+) -> List[RuleEffect]:
+    changed_ids = []
+    effects = []
+    ids = ordered_ids or list(original_geometries.keys())
+    for object_id in ids:
+        before_geometry = original_geometries[object_id]
+        after_geometry = current_lookup[object_id]["geometry"]
+        if before_geometry == after_geometry:
+            continue
+        changed_ids.append(object_id)
+        effects.append(
+            _layout_effect_for_geometry(
+                rule,
+                context,
+                object_id=object_id,
+                before_geometry=before_geometry,
+                after_geometry=after_geometry,
+            )
+        )
+    _append_layout_adjusted_ids(context, changed_ids)
+    return effects
+
+
+def _rect_gap(first: dict, second: dict, axis: str) -> float:
+    if axis == "x":
+        return second["geometry"]["x"] - (first["geometry"]["x"] + first["geometry"]["w"])
+    return second["geometry"]["y"] - (first["geometry"]["y"] + first["geometry"]["h"])
+
+
+def _cluster_bbox(cluster: Sequence[dict]) -> dict:
+    left = min(item["geometry"]["x"] for item in cluster)
+    top = min(item["geometry"]["y"] for item in cluster)
+    right = max(item["geometry"]["x"] + item["geometry"]["w"] for item in cluster)
+    bottom = max(item["geometry"]["y"] + item["geometry"]["h"] for item in cluster)
+    return {
+        "left": left,
+        "top": top,
+        "right": right,
+        "bottom": bottom,
+        "w": right - left,
+        "h": bottom - top,
+    }
+
+
+def _split_axis_clusters(
+    entities: Sequence[dict],
+    *,
+    axis: str,
+    orth_axis: str,
+    anchors: List[int],
+) -> List[List[dict]]:
+    clusters_by_anchor: Dict[int, List[dict]] = {}
+    for entity in entities:
+        anchor = _nearest_alignment_anchor(entity["geometry"][orth_axis], anchors)
+        clusters_by_anchor.setdefault(anchor, []).append(entity)
+
+    output = []
+    sort_axis = "x" if axis == "x" else "y"
+    for anchor in sorted(clusters_by_anchor):
+        items = sorted(
+            clusters_by_anchor[anchor],
+            key=lambda item: (
+                item["geometry"][sort_axis],
+                item["id"],
+            ),
+        )
+        current_cluster = [items[0]]
+        for entity in items[1:]:
+            gap = _rect_gap(current_cluster[-1], entity, axis)
+            if gap > CLUSTER_ADJACENCY_THRESHOLD:
+                output.append(current_cluster)
+                current_cluster = [entity]
+            else:
+                current_cluster.append(entity)
+        output.append(current_cluster)
+
+    return [cluster for cluster in output if len(cluster) >= 2]
+
+
+def _note_layout_clusters(notes: Sequence[dict], state: dict) -> List[Tuple[str, List[dict]]]:
+    if len(notes) < 2:
+        return []
+
+    y_spread = max(item["geometry"]["y"] for item in notes) - min(
+        item["geometry"]["y"] for item in notes
+    )
+    x_spread = max(item["geometry"]["x"] for item in notes) - min(
+        item["geometry"]["x"] for item in notes
+    )
+    if y_spread <= ALIGNMENT_CLUSTER_TOLERANCE and x_spread > y_spread:
+        return [
+            (
+                "row",
+                sorted(notes, key=lambda item: (item["geometry"]["x"], item["id"])),
+            )
+        ]
+    if x_spread <= ALIGNMENT_CLUSTER_TOLERANCE and y_spread > x_spread:
+        return [
+            (
+                "column",
+                sorted(notes, key=lambda item: (item["geometry"]["y"], item["id"])),
+            )
+        ]
+
+    row_anchors = _build_axis_anchors(state, "y")
+    column_anchors = _build_axis_anchors(state, "x")
+    remaining = {entity["id"]: entity for entity in notes}
+    clusters: List[Tuple[str, List[dict]]] = []
+
+    row_clusters = sorted(
+        _split_axis_clusters(notes, axis="x", orth_axis="y", anchors=row_anchors),
+        key=lambda cluster: (
+            _cluster_bbox(cluster)["top"],
+            _cluster_bbox(cluster)["left"],
+            tuple(item["id"] for item in cluster),
+        ),
+    )
+    for cluster in row_clusters:
+        cluster_ids = [item["id"] for item in cluster]
+        if any(item_id not in remaining for item_id in cluster_ids):
+            continue
+        clusters.append(("row", cluster))
+        for item_id in cluster_ids:
+            remaining.pop(item_id, None)
+
+    if len(remaining) >= 2:
+        column_clusters = sorted(
+            _split_axis_clusters(
+                list(remaining.values()),
+                axis="y",
+                orth_axis="x",
+                anchors=column_anchors,
+            ),
+            key=lambda cluster: (
+                _cluster_bbox(cluster)["left"],
+                _cluster_bbox(cluster)["top"],
+                tuple(item["id"] for item in cluster),
+            ),
+        )
+        for cluster in column_clusters:
+            cluster_ids = [item["id"] for item in cluster]
+            if any(item_id not in remaining for item_id in cluster_ids):
+                continue
+            clusters.append(("column", cluster))
+            for item_id in cluster_ids:
+                remaining.pop(item_id, None)
+
+    return clusters
+
+
+def _spacing_target_gap(cluster: Sequence[dict], orientation: str) -> int:
+    axis = "x" if orientation == "row" else "y"
+    ordered = sorted(
+        cluster,
+        key=lambda item: (
+            item["geometry"][axis],
+            item["id"],
+        ),
+    )
+    if len(ordered) < 2:
+        return INTRACLUSTER_GAP
+
+    gaps = []
+    for index in range(len(ordered) - 1):
+        gap = _rect_gap(ordered[index], ordered[index + 1], axis)
+        gaps.append(max(INTRACLUSTER_GAP, gap))
+
+    gaps.sort()
+    median_gap = gaps[len(gaps) // 2]
+    return _grid_gap(median_gap)
+
+
 def _apply_no_overlap_layout(context: RuleContext) -> List[RuleEffect]:
     state = context.state
     if not state["objects"]:
@@ -300,7 +565,6 @@ def _apply_no_overlap_layout(context: RuleContext) -> List[RuleEffect]:
             details={"firstEntityId": first_left, "secondEntityId": first_right},
         )
 
-    effects = []
     adjustment_sort_key = {}
     for index, object_id in enumerate(affected_ids):
         adjustment_sort_key[object_id] = (0, index, object_id)
@@ -310,38 +574,16 @@ def _apply_no_overlap_layout(context: RuleContext) -> List[RuleEffect]:
             adjustment_sort_key[entity["id"]] = (1, untouched_index, entity["id"])
             untouched_index += 1
 
-    adjusted_ids = []
-    for entity in state["objects"]:
-        before_geometry = original_geometries[entity["id"]]
-        after_geometry = entity["geometry"]
-        if before_geometry == after_geometry:
-            continue
-        adjusted_ids.append(entity["id"])
-        effects.append(
-            RuleEffect(
-                rule=NO_OVERLAP_LAYOUT_RULE.name,
-                phase=context.phase,
-                kind="restore_geometry",
-                undo_payload={
-                    "entityId": entity["id"],
-                    "geometry": before_geometry,
-                },
-                details={
-                    "id": entity["id"],
-                    "from": {
-                        "x": before_geometry["x"],
-                        "y": before_geometry["y"],
-                    },
-                    "to": {
-                        "x": after_geometry["x"],
-                        "y": after_geometry["y"],
-                    },
-                },
-            )
-        )
-
-    effects.sort(key=lambda item: adjustment_sort_key[item.details["id"]])
-    context.batch_metadata["layout_adjusted_ids"] = list(adjusted_ids)
+    effects = _object_geometry_effects(
+        NO_OVERLAP_LAYOUT_RULE,
+        context,
+        original_geometries,
+        lookup,
+        ordered_ids=sorted(
+            original_geometries.keys(),
+            key=lambda object_id: adjustment_sort_key[object_id],
+        ),
+    )
     return effects
 
 
@@ -351,42 +593,16 @@ def _run_no_overlap_layout(context: RuleContext):
     return _apply_no_overlap_layout(context)
 
 
-def _alignment_target_ids(context: RuleContext) -> List[str]:
-    lookup = object_lookup(context.state)
-    order_map = context.batch_metadata.get("layout_affected_order_map", {})
-    ordered_targets = _sort_ids_by_layout_priority(
-        [object_id for object_id in object_ids_in_order(context.state) if object_id in order_map],
-        order_map,
-    )
-
-    seen = set()
-    targets = []
-    for object_id in ordered_targets:
-        if object_id in lookup and object_id not in seen:
-            targets.append(object_id)
-            seen.add(object_id)
-
-    for object_id in context.batch_metadata.get("layout_adjusted_ids", []):
-        if object_id in lookup and object_id not in seen:
-            targets.append(object_id)
-            seen.add(object_id)
-
-    return targets
-
-
 def _apply_alignment_layout(context: RuleContext) -> List[RuleEffect]:
     state = context.state
-    if not state["objects"]:
-        return []
-
-    target_ids = _alignment_target_ids(context)
+    target_ids = _layout_target_ids(context)
     if not target_ids:
         return []
 
     lookup = object_lookup(state)
     original_geometries = {
-        object_id: deepcopy(entity["geometry"])
-        for object_id, entity in lookup.items()
+        object_id: deepcopy(lookup[object_id]["geometry"])
+        for object_id in target_ids
     }
     row_anchors = _build_axis_anchors(state, "y")
     column_anchors = _build_axis_anchors(state, "x")
@@ -426,42 +642,481 @@ def _apply_alignment_layout(context: RuleContext) -> List[RuleEffect]:
             details={"firstEntityId": first_left, "secondEntityId": first_right},
         )
 
-    effects = []
-    for object_id in target_ids:
-        before_geometry = original_geometries[object_id]
-        after_geometry = lookup[object_id]["geometry"]
-        if before_geometry == after_geometry:
-            continue
-        effects.append(
-            RuleEffect(
-                rule=ALIGNMENT_LAYOUT_RULE.name,
-                phase=context.phase,
-                kind="restore_geometry",
-                undo_payload={
-                    "entityId": object_id,
-                    "geometry": before_geometry,
-                },
-                details={
-                    "id": object_id,
-                    "from": {
-                        "x": before_geometry["x"],
-                        "y": before_geometry["y"],
-                    },
-                    "to": {
-                        "x": after_geometry["x"],
-                        "y": after_geometry["y"],
-                    },
-                },
-            )
-        )
-
-    return effects
+    return _object_geometry_effects(
+        ALIGNMENT_LAYOUT_RULE,
+        context,
+        original_geometries,
+        lookup,
+        ordered_ids=target_ids,
+    )
 
 
 def _run_alignment_layout(context: RuleContext):
     if context.options.get("layoutPolicy", "none") != "no-overlap":
         return []
     return _apply_alignment_layout(context)
+
+
+def _apply_equalize_cluster_spacing(context: RuleContext) -> List[RuleEffect]:
+    state = context.state
+    target_note_ids = _layout_target_ids(context, object_type="sticky-note")
+    if len(target_note_ids) < 2:
+        return []
+
+    lookup = object_lookup(state)
+    target_notes = [lookup[object_id] for object_id in target_note_ids]
+    clusters = _note_layout_clusters(target_notes, state)
+    if not clusters:
+        return []
+
+    original_geometries = {
+        object_id: deepcopy(lookup[object_id]["geometry"])
+        for object_id in target_note_ids
+    }
+    cluster_target_ids = {
+        item["id"]
+        for _orientation, cluster in clusters
+        for item in cluster
+    }
+    floating_label_ids = set(_layout_target_ids(context, object_type="text-label"))
+    occupied_geometries = [
+        (object_id, deepcopy(entity["geometry"]))
+        for object_id, entity in lookup.items()
+        if object_id not in cluster_target_ids and object_id not in floating_label_ids
+    ]
+    row_anchors = _build_axis_anchors(state, "y")
+    column_anchors = _build_axis_anchors(state, "x")
+
+    ordered_cluster_ids = []
+    for orientation, cluster in clusters:
+        cluster = sorted(
+            cluster,
+            key=lambda item: (
+                item["geometry"]["x"] if orientation == "row" else item["geometry"]["y"],
+                item["id"],
+            ),
+        )
+        gap = _spacing_target_gap(cluster, orientation)
+        if orientation == "row":
+            anchor_y = _nearest_alignment_anchor(
+                sum(item["geometry"]["y"] for item in cluster) / len(cluster),
+                row_anchors,
+            )
+            cursor_x = min(item["geometry"]["x"] for item in cluster)
+            for entity in cluster:
+                desired_geometry = {
+                    **deepcopy(entity["geometry"]),
+                    "x": cursor_x,
+                    "y": anchor_y,
+                }
+                entity["geometry"] = _find_non_overlapping_geometry(
+                    EQUALIZE_CLUSTER_SPACING_RULE,
+                    context,
+                    entity["id"],
+                    [desired_geometry],
+                    occupied_geometries,
+                )
+                occupied_geometries.append((entity["id"], deepcopy(entity["geometry"])))
+                cursor_x = entity["geometry"]["x"] + entity["geometry"]["w"] + gap
+                ordered_cluster_ids.append(entity["id"])
+        else:
+            anchor_x = _nearest_alignment_anchor(
+                sum(item["geometry"]["x"] for item in cluster) / len(cluster),
+                column_anchors,
+            )
+            cursor_y = min(item["geometry"]["y"] for item in cluster)
+            for entity in cluster:
+                desired_geometry = {
+                    **deepcopy(entity["geometry"]),
+                    "x": anchor_x,
+                    "y": cursor_y,
+                }
+                entity["geometry"] = _find_non_overlapping_geometry(
+                    EQUALIZE_CLUSTER_SPACING_RULE,
+                    context,
+                    entity["id"],
+                    [desired_geometry],
+                    occupied_geometries,
+                )
+                occupied_geometries.append((entity["id"], deepcopy(entity["geometry"])))
+                cursor_y = entity["geometry"]["y"] + entity["geometry"]["h"] + gap
+                ordered_cluster_ids.append(entity["id"])
+
+    return _object_geometry_effects(
+        EQUALIZE_CLUSTER_SPACING_RULE,
+        context,
+        original_geometries,
+        lookup,
+        ordered_ids=ordered_cluster_ids,
+    )
+
+
+def _run_equalize_cluster_spacing(context: RuleContext):
+    if context.options.get("layoutPolicy", "none") != "no-overlap":
+        return []
+    return _apply_equalize_cluster_spacing(context)
+
+
+def _heading_candidate_clusters(context: RuleContext) -> List[List[dict]]:
+    lookup = object_lookup(context.state)
+    target_note_ids = _layout_target_ids(context, object_type="sticky-note")
+    if target_note_ids:
+        clusters = _note_layout_clusters(
+            [lookup[object_id] for object_id in target_note_ids],
+            context.state,
+        )
+        if clusters:
+            return [cluster for _orientation, cluster in clusters]
+
+    all_notes = [entity for entity in context.state["objects"] if entity["type"] == "sticky-note"]
+    return [cluster for _orientation, cluster in _note_layout_clusters(all_notes, context.state)]
+
+
+def _heading_desired_geometries(label_geometry: dict, cluster: Sequence[dict]) -> List[dict]:
+    bbox = _cluster_bbox(cluster)
+    desired_geometries = [
+        {
+            **deepcopy(label_geometry),
+            "x": bbox["left"],
+            "y": bbox["top"] - label_geometry["h"] - HEADING_VERTICAL_OFFSET,
+        },
+        {
+            **deepcopy(label_geometry),
+            "x": bbox["left"] + (bbox["w"] - label_geometry["w"]) / 2,
+            "y": bbox["top"] - label_geometry["h"] - HEADING_VERTICAL_OFFSET,
+        },
+        {
+            **deepcopy(label_geometry),
+            "x": bbox["left"],
+            "y": bbox["bottom"] + HEADING_VERTICAL_OFFSET,
+        },
+    ]
+    filtered = []
+    seen = set()
+    for geometry in desired_geometries:
+        signature = geometry_signature(geometry)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        if geometry_fits_canvas(geometry):
+            filtered.append(geometry)
+    return filtered or [deepcopy(label_geometry)]
+
+
+def _cluster_heading_distance(label: dict, cluster: Sequence[dict]) -> Tuple[float, float, float]:
+    bbox = _cluster_bbox(cluster)
+    desired_x = bbox["left"]
+    desired_y = bbox["top"] - label["geometry"]["h"] - HEADING_VERTICAL_OFFSET
+    return (
+        abs(label["geometry"]["x"] - desired_x) + abs(label["geometry"]["y"] - desired_y),
+        bbox["top"],
+        bbox["left"],
+    )
+
+
+def _apply_heading_placement(context: RuleContext) -> List[RuleEffect]:
+    state = context.state
+    target_label_ids = _layout_target_ids(context, object_type="text-label")
+    if not target_label_ids:
+        return []
+
+    lookup = object_lookup(state)
+    clusters = _heading_candidate_clusters(context)
+    if not clusters:
+        return []
+
+    original_geometries = {
+        object_id: deepcopy(lookup[object_id]["geometry"])
+        for object_id in target_label_ids
+    }
+    occupied_geometries = [
+        (object_id, deepcopy(entity["geometry"]))
+        for object_id, entity in lookup.items()
+        if object_id not in target_label_ids
+    ]
+    remaining_clusters = list(clusters)
+
+    for object_id in target_label_ids:
+        if not remaining_clusters:
+            break
+        label = lookup[object_id]
+        cluster = min(
+            remaining_clusters,
+            key=lambda candidate: _cluster_heading_distance(label, candidate),
+        )
+        remaining_clusters.remove(cluster)
+        desired_geometries = _heading_desired_geometries(label["geometry"], cluster)
+        label["geometry"] = _find_non_overlapping_geometry(
+            HEADING_PLACEMENT_RULE,
+            context,
+            object_id,
+            desired_geometries,
+            occupied_geometries,
+        )
+        occupied_geometries.append((object_id, deepcopy(label["geometry"])))
+
+    return _object_geometry_effects(
+        HEADING_PLACEMENT_RULE,
+        context,
+        original_geometries,
+        lookup,
+        ordered_ids=target_label_ids,
+    )
+
+
+def _run_heading_placement(context: RuleContext):
+    if context.options.get("layoutPolicy", "none") != "no-overlap":
+        return []
+    return _apply_heading_placement(context)
+
+
+def _connector_segment(
+    state: dict,
+    connector: dict,
+    *,
+    source_handle: Optional[str] = None,
+    target_handle: Optional[str] = None,
+) -> Optional[Tuple[dict, dict]]:
+    lookup = object_lookup(state)
+    source = lookup.get(connector["source"])
+    target = lookup.get(connector["target"])
+    if source is None or target is None:
+        return None
+
+    source_point = handle_point(
+        source["geometry"],
+        source_handle or connector.get("sourceHandle", "right"),
+    )
+    target_point = handle_point(
+        target["geometry"],
+        target_handle or connector.get("targetHandle", "left"),
+    )
+    return source_point, target_point
+
+
+def _point_equal(first: dict, second: dict, epsilon: float = 1e-6) -> bool:
+    return abs(first["x"] - second["x"]) <= epsilon and abs(first["y"] - second["y"]) <= epsilon
+
+
+def _orientation(first: dict, second: dict, third: dict) -> float:
+    return (
+        (second["y"] - first["y"]) * (third["x"] - second["x"])
+        - (second["x"] - first["x"]) * (third["y"] - second["y"])
+    )
+
+
+def _segments_strictly_intersect(first: Tuple[dict, dict], second: Tuple[dict, dict]) -> bool:
+    first_start, first_end = first
+    second_start, second_end = second
+    if any(
+        _point_equal(point_a, point_b)
+        for point_a in (first_start, first_end)
+        for point_b in (second_start, second_end)
+    ):
+        return False
+
+    o1 = _orientation(first_start, first_end, second_start)
+    o2 = _orientation(first_start, first_end, second_end)
+    o3 = _orientation(second_start, second_end, first_start)
+    o4 = _orientation(second_start, second_end, first_end)
+    return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
+
+
+def _crossing_angle_degrees(first: Tuple[dict, dict], second: Tuple[dict, dict]) -> float:
+    first_dx = first[1]["x"] - first[0]["x"]
+    first_dy = first[1]["y"] - first[0]["y"]
+    second_dx = second[1]["x"] - second[0]["x"]
+    second_dy = second[1]["y"] - second[0]["y"]
+    first_length = math.hypot(first_dx, first_dy)
+    second_length = math.hypot(second_dx, second_dy)
+    if first_length == 0 or second_length == 0:
+        return 0.0
+
+    cosine = abs(
+        (first_dx * second_dx + first_dy * second_dy) / (first_length * second_length)
+    )
+    cosine = max(-1.0, min(1.0, cosine))
+    return math.degrees(math.acos(cosine))
+
+
+def _segment_length(segment: Tuple[dict, dict]) -> float:
+    return math.hypot(
+        segment[1]["x"] - segment[0]["x"],
+        segment[1]["y"] - segment[0]["y"],
+    )
+
+
+def _target_connector_ids(context: RuleContext) -> List[str]:
+    state = context.state
+    connector_order_map = context.batch_metadata.get("connector_affected_order_map", {})
+    target_object_ids = set(_layout_target_ids(context))
+
+    connector_ids = []
+    for connector in state["connectors"]:
+        if connector["id"] in connector_order_map:
+            connector_ids.append(connector["id"])
+            continue
+        if connector["source"] in target_object_ids or connector["target"] in target_object_ids:
+            connector_ids.append(connector["id"])
+
+    return sorted(
+        connector_ids,
+        key=lambda connector_id: (
+            connector_order_map.get(connector_id, math.inf),
+            connector_id,
+        ),
+    )
+
+
+def _connector_candidate_score(
+    state: dict,
+    connector: dict,
+    *,
+    source_handle: str,
+    target_handle: str,
+    other_connectors: Sequence[dict],
+) -> Tuple[float, float, int, int, int]:
+    segment = _connector_segment(
+        state,
+        connector,
+        source_handle=source_handle,
+        target_handle=target_handle,
+    )
+    if segment is None:
+        return (math.inf, math.inf, math.inf, math.inf, math.inf)
+
+    crossings = 0
+    minimum_angle = 90.0
+    for other in other_connectors:
+        if connector["id"] == other["id"]:
+            continue
+        if (
+            connector["source"] in {other["source"], other["target"]}
+            or connector["target"] in {other["source"], other["target"]}
+        ):
+            continue
+        other_segment = _connector_segment(state, other)
+        if other_segment is None or not _segments_strictly_intersect(segment, other_segment):
+            continue
+        crossings += 1
+        minimum_angle = min(minimum_angle, _crossing_angle_degrees(segment, other_segment))
+
+    crossing_score = crossings
+    angle_score = -minimum_angle if crossings else -90.0
+    length_score = _segment_length(segment)
+    return (
+        crossing_score,
+        angle_score,
+        int(round(length_score)),
+        HANDLE_VALUES.index(source_handle),
+        HANDLE_VALUES.index(target_handle),
+    )
+
+
+def _apply_connector_readability(context: RuleContext) -> List[RuleEffect]:
+    state = context.state
+    target_connector_ids = _target_connector_ids(context)
+    if not target_connector_ids:
+        return []
+
+    connectors_by_id = {connector["id"]: connector for connector in state["connectors"]}
+    baseline_connectors = {
+        connector["id"]: {
+            "sourceHandle": connector.get("sourceHandle", "right"),
+            "targetHandle": connector.get("targetHandle", "left"),
+        }
+        for connector in state["connectors"]
+    }
+    locked_connectors = [
+        deepcopy(connector)
+        for connector in state["connectors"]
+        if connector["id"] not in target_connector_ids
+    ]
+    effects = []
+
+    for connector_id in target_connector_ids:
+        connector = connectors_by_id[connector_id]
+        current_handles = {
+            "sourceHandle": connector.get("sourceHandle", "right"),
+            "targetHandle": connector.get("targetHandle", "left"),
+        }
+        locked_ids = {item["id"] for item in locked_connectors}
+        comparison_connectors = locked_connectors + [
+            deepcopy(connectors_by_id[item_id])
+            for item_id in target_connector_ids
+            if (
+                item_id != connector_id
+                and item_id in connectors_by_id
+                and item_id not in locked_ids
+            )
+        ]
+        current_score = _connector_candidate_score(
+            state,
+            connector,
+            source_handle=current_handles["sourceHandle"],
+            target_handle=current_handles["targetHandle"],
+            other_connectors=comparison_connectors,
+        )
+
+        best_handles = dict(current_handles)
+        best_score = (
+            *current_score[:2],
+            0,
+            current_score[2],
+            current_score[3],
+            current_score[4],
+        )
+        for source_handle in HANDLE_VALUES:
+            for target_handle in HANDLE_VALUES:
+                score = _connector_candidate_score(
+                    state,
+                    connector,
+                    source_handle=source_handle,
+                    target_handle=target_handle,
+                    other_connectors=comparison_connectors,
+                )
+                candidate_score = (
+                    score[0],
+                    score[1],
+                    0 if (
+                        source_handle == current_handles["sourceHandle"]
+                        and target_handle == current_handles["targetHandle"]
+                    ) else 1,
+                    score[2],
+                    score[3],
+                    score[4],
+                )
+                if candidate_score < best_score:
+                    best_score = candidate_score
+                    best_handles = {
+                        "sourceHandle": source_handle,
+                        "targetHandle": target_handle,
+                    }
+
+        if best_handles == current_handles:
+            locked_connectors.append(deepcopy(connector))
+            continue
+
+        connector["sourceHandle"] = best_handles["sourceHandle"]
+        connector["targetHandle"] = best_handles["targetHandle"]
+        effects.append(
+            restore_connector_handles_effect(
+                CONNECTOR_READABILITY_RULE,
+                context,
+                connector_id=connector_id,
+                before_handles=current_handles,
+                after_handles=best_handles,
+            )
+        )
+        locked_connectors.append(deepcopy(connector))
+
+    return effects
+
+
+def _run_connector_readability(context: RuleContext):
+    if context.options.get("layoutPolicy", "none") != "no-overlap":
+        return []
+    return _apply_connector_readability(context)
 
 
 NO_OVERLAP_LAYOUT_RULE = CanvasRule(
@@ -490,4 +1145,49 @@ ALIGNMENT_LAYOUT_RULE = CanvasRule(
     run=_run_alignment_layout,
 )
 
-LAYOUT_RULES = (NO_OVERLAP_LAYOUT_RULE, ALIGNMENT_LAYOUT_RULE)
+EQUALIZE_CLUSTER_SPACING_RULE = CanvasRule(
+    name="equalize_cluster_spacing",
+    phase="post_batch",
+    ops=None,
+    kind="auto_fix",
+    priority=120,
+    planner_guidance=(
+        "Within a group, keep note spacing consistent instead of uneven gaps.",
+    ),
+    repair_hint="Use more even spacing within each note cluster.",
+    run=_run_equalize_cluster_spacing,
+)
+
+HEADING_PLACEMENT_RULE = CanvasRule(
+    name="heading_placement",
+    phase="post_batch",
+    ops=None,
+    kind="auto_fix",
+    priority=130,
+    planner_guidance=(
+        "Place text labels as headings above the clusters they describe, aligned to the cluster edge.",
+    ),
+    repair_hint="Place labels above the groups they describe instead of leaving them floating inside the layout.",
+    run=_run_heading_placement,
+)
+
+CONNECTOR_READABILITY_RULE = CanvasRule(
+    name="connector_readability",
+    phase="post_batch",
+    ops=None,
+    kind="auto_fix",
+    priority=140,
+    planner_guidance=(
+        "Reduce connector crossings when possible, and if crossings remain, prefer larger crossing angles.",
+    ),
+    repair_hint="Route connectors with cleaner attachment sides to reduce crossings and make the remaining crossings steeper.",
+    run=_run_connector_readability,
+)
+
+LAYOUT_RULES = (
+    NO_OVERLAP_LAYOUT_RULE,
+    ALIGNMENT_LAYOUT_RULE,
+    EQUALIZE_CLUSTER_SPACING_RULE,
+    HEADING_PLACEMENT_RULE,
+    CONNECTOR_READABILITY_RULE,
+)

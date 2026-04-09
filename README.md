@@ -33,7 +33,7 @@ The frontend dev server runs on port `5173` and proxies `/api/*` requests to the
 ./dev.sh
 ```
 
-This starts the Flask backend and Vite frontend together. Changes in the frontend will appear after refresh, and Vite will usually hot-reload them automatically as well.
+This starts the Flask backend and Vite frontend together. If port `5000` is already in use, `dev.sh` automatically selects the next available backend port and configures the frontend proxy to match. You can also force a specific backend port with `BACKEND_PORT=5001 ./dev.sh`. Changes in the frontend will appear after refresh, and Vite will usually hot-reload them automatically as well.
 
 ## Atomic Action API
 
