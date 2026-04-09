@@ -41,6 +41,8 @@ The backend exposes an atomic action catalog and an action executor for the canv
 
 - `GET /api/action-schemas`: returns the JSON schema, required fields, optional fields, preconditions, executor name, postcondition checker, and undo handler for each atomic action.
 - `POST /api/canvas-actions`: validates an action batch before execution, applies the actions to the stored canvas state, runs postcondition checks, and returns the resulting canvas state.
+- `POST /api/llm/subgoals`: converts a user prompt into subgoals only, using the current canvas state and the allowed action set as context.
+- `POST /api/llm/actions`: converts one subgoal into atomic actions only, validated against the current canvas state.
 
 Example batch:
 
@@ -63,3 +65,22 @@ Example batch:
   ]
 }
 ```
+
+LLM planner request examples:
+
+```json
+{
+  "prompt": "Group these notes into themes and make a simple pipeline."
+}
+```
+
+```json
+{
+  "subgoal": "cluster selected notes into themes"
+}
+```
+
+The LLM planner reads `OPENAI_API_KEY` from `backend/.env`. Optional model overrides:
+
+- `OPENAI_SUBGOAL_MODEL`
+- `OPENAI_ACTION_MODEL`

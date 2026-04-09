@@ -9,6 +9,16 @@ from canvas_actions import (
     validate_action_request,
 )
 from canvas_state import empty_canvas_state, validate_canvas_state
+from llm_planner import (
+    LLMPlannerConfigError,
+    LLMPlannerError,
+    LLMPlannerValidationError,
+    plan_actions_with_llm,
+    plan_subgoals_with_llm,
+    resolve_canvas_state,
+    validate_action_planner_request,
+    validate_subgoal_request,
+)
 
 
 def create_app() -> Flask:
@@ -128,6 +138,104 @@ def create_app() -> Flask:
                     for entry in execution_result["executed_actions"]
                 ],
                 "canvasState": execution_result["canvas_state"],
+            }
+        )
+
+    @app.post("/api/llm/subgoals")
+    def get_subgoals_from_prompt():
+        payload = request.get_json(silent=True)
+
+        try:
+            validate_subgoal_request(payload)
+            canvas_state = resolve_canvas_state(
+                payload.get("canvasState"),
+                app.config["LATEST_CANVAS_STATE"],
+            )
+            llm_result = plan_subgoals_with_llm(payload["prompt"], canvas_state)
+        except LLMPlannerValidationError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+        except LLMPlannerConfigError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                500,
+            )
+        except LLMPlannerError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                502,
+            )
+
+        return jsonify(
+            {
+                "status": "ok",
+                "subgoals": llm_result["subgoals"],
+            }
+        )
+
+    @app.post("/api/llm/actions")
+    def get_actions_from_subgoal():
+        payload = request.get_json(silent=True)
+
+        try:
+            validate_action_planner_request(payload)
+            canvas_state = resolve_canvas_state(
+                payload.get("canvasState"),
+                app.config["LATEST_CANVAS_STATE"],
+            )
+            llm_result = plan_actions_with_llm(payload["subgoal"], canvas_state)
+        except LLMPlannerValidationError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+        except LLMPlannerConfigError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                500,
+            )
+        except LLMPlannerError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                502,
+            )
+
+        return jsonify(
+            {
+                "status": "ok",
+                "actions": llm_result["actions"],
             }
         )
 
