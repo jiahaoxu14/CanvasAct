@@ -63,7 +63,6 @@ def create_app() -> Flask:
                 "message": "Canvas state saved.",
                 "counts": {
                     "objects": len(payload["objects"]),
-                    "frames": len(payload["frames"]),
                     "connectors": len(payload["connectors"]),
                     "selection": len(payload["selection"]),
                 },
@@ -257,6 +256,7 @@ def create_app() -> Flask:
                     "referenceResolution",
                     empty_reference_resolution(),
                 ),
+                "failureLog": llm_result.get("failureLog", []),
                 "ambiguousReferences": llm_result.get(
                     "referenceResolution",
                     empty_reference_resolution(),

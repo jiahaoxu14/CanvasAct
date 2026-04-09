@@ -9,22 +9,16 @@ import {
   ReactFlowProvider,
   SelectionMode,
   addEdge,
-  getNodesBounds,
   useEdgesState,
   useNodesState,
   useReactFlow,
   useViewport,
 } from "@xyflow/react";
-import {
-  FrameNode,
-  StickyNoteNode,
-  TextLabelNode,
-} from "./whiteboardNodes";
+import { StickyNoteNode, TextLabelNode } from "./whiteboardNodes";
 
 const nodeTypes = {
   stickyNote: StickyNoteNode,
   textLabel: TextLabelNode,
-  frame: FrameNode,
 };
 
 const historyLimit = 100;
@@ -32,32 +26,14 @@ const historyLimit = 100;
 const nodeTemplates = {
   stickyNote: {
     width: 220,
-    height: 168,
-    label: "Capture a quick idea.\nAnnotate it from the panel.",
+    height: 156,
+    label: "Capture a quick idea.",
   },
   textLabel: {
     width: 250,
-    height: 86,
+    height: 84,
     label: "Short annotation or heading",
   },
-  frame: {
-    width: 320,
-    height: 240,
-    label: "New frame",
-  },
-};
-
-const framePadding = {
-  x: 28,
-  top: 56,
-  bottom: 28,
-};
-
-const frameInteriorPadding = {
-  left: 16,
-  top: 44,
-  right: 16,
-  bottom: 16,
 };
 
 const defaultEdgeOptions = {
@@ -86,12 +62,14 @@ const defaultEdgeOptions = {
   },
 };
 
+const emptyReferenceResolution = {
+  resolvedReferences: [],
+  ambiguousReferences: [],
+  unresolvedReferences: [],
+};
+
 function roundNumber(value) {
   return Math.round(value * 100) / 100;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
 }
 
 function cloneSnapshotData(value) {
@@ -116,7 +94,6 @@ function isTextEditingTarget(target) {
   }
 
   const tagName = target.tagName.toLowerCase();
-
   return (
     tagName === "input" ||
     tagName === "textarea" ||
@@ -161,283 +138,54 @@ function getNodeSize(node) {
   };
 }
 
-function getAbsolutePosition(node, lookup) {
-  if (!node.parentId) {
-    return node.position;
-  }
-
-  const parent = lookup.get(node.parentId);
-  if (!parent) {
-    return node.position;
-  }
-
-  const parentPosition = getAbsolutePosition(parent, lookup);
-
-  return {
-    x: parentPosition.x + node.position.x,
-    y: parentPosition.y + node.position.y,
-  };
-}
-
-function getHandlePoint(node, handleId, role, lookup) {
-  const absolutePosition = getAbsolutePosition(node, lookup);
+function getHandlePoint(node, handleId, role) {
   const { width, height } = getNodeSize(node);
   const resolvedHandle = handleId ?? (role === "source" ? "right" : "left");
 
   switch (resolvedHandle) {
     case "left":
       return {
-        x: roundNumber(absolutePosition.x),
-        y: roundNumber(absolutePosition.y + height / 2),
+        x: roundNumber(node.position.x),
+        y: roundNumber(node.position.y + height / 2),
       };
     case "top":
       return {
-        x: roundNumber(absolutePosition.x + width / 2),
-        y: roundNumber(absolutePosition.y),
+        x: roundNumber(node.position.x + width / 2),
+        y: roundNumber(node.position.y),
       };
     case "bottom":
       return {
-        x: roundNumber(absolutePosition.x + width / 2),
-        y: roundNumber(absolutePosition.y + height),
+        x: roundNumber(node.position.x + width / 2),
+        y: roundNumber(node.position.y + height),
       };
     case "right":
     default:
       return {
-        x: roundNumber(absolutePosition.x + width),
-        y: roundNumber(absolutePosition.y + height / 2),
+        x: roundNumber(node.position.x + width),
+        y: roundNumber(node.position.y + height / 2),
       };
   }
 }
 
-function sortNodesByHierarchy(nodes) {
-  const originalOrder = new Map(
-    nodes.map((node, index) => [node.id, index]),
-  );
-  const lookup = new Map(nodes.map((node) => [node.id, node]));
-  const depthCache = new Map();
-
-  function getDepth(node) {
-    if (depthCache.has(node.id)) {
-      return depthCache.get(node.id);
-    }
-
-    if (!node.parentId) {
-      depthCache.set(node.id, 0);
-      return 0;
-    }
-
-    const parent = lookup.get(node.parentId);
-    const depth = parent ? getDepth(parent) + 1 : 0;
-    depthCache.set(node.id, depth);
-    return depth;
-  }
-
-  return [...nodes].sort((left, right) => {
-    const depthDelta = getDepth(left) - getDepth(right);
-    if (depthDelta !== 0) {
-      return depthDelta;
-    }
-
-    return originalOrder.get(left.id) - originalOrder.get(right.id);
-  });
-}
-
-function collectDescendantIds(nodes, ids) {
-  const selectedIds = new Set(ids);
-  let changed = true;
-
-  while (changed) {
-    changed = false;
-
-    for (const node of nodes) {
-      if (node.parentId && selectedIds.has(node.parentId) && !selectedIds.has(node.id)) {
-        selectedIds.add(node.id);
-        changed = true;
-      }
-    }
-  }
-
-  return selectedIds;
-}
-
-function getFrameInteriorBounds(frame, lookup) {
-  const absolutePosition = getAbsolutePosition(frame, lookup);
-  const { width, height } = getNodeSize(frame);
-
-  return {
-    absolutePosition,
-    width,
-    height,
-    left: absolutePosition.x + frameInteriorPadding.left,
-    top: absolutePosition.y + frameInteriorPadding.top,
-    right: absolutePosition.x + width - frameInteriorPadding.right,
-    bottom: absolutePosition.y + height - frameInteriorPadding.bottom,
-  };
-}
-
-function findBestFrameForNode(node, frames, lookup) {
-  const absolutePosition = getAbsolutePosition(node, lookup);
-  const { width, height } = getNodeSize(node);
-  const center = {
-    x: absolutePosition.x + width / 2,
-    y: absolutePosition.y + height / 2,
-  };
-
-  return (
-    frames
-      .filter((frame) => frame.id !== node.id)
-      .filter((frame) => {
-        const bounds = getFrameInteriorBounds(frame, lookup);
-
-        return (
-          center.x >= bounds.left &&
-          center.x <= bounds.right &&
-          center.y >= bounds.top &&
-          center.y <= bounds.bottom
-        );
-      })
-      .sort((left, right) => {
-        const leftSize = getNodeSize(left);
-        const rightSize = getNodeSize(right);
-
-        return (
-          leftSize.width * leftSize.height - rightSize.width * rightSize.height
-        );
-      })[0] ?? null
-  );
-}
-
-function mergeDraggedNodes(currentNodes, draggedNodes) {
-  const draggedLookup = new Map(draggedNodes.map((node) => [node.id, node]));
-
-  return currentNodes.map((node) => {
-    const draggedNode = draggedLookup.get(node.id);
-    if (!draggedNode) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: draggedNode.position,
-      selected: draggedNode.selected ?? node.selected,
-    };
-  });
-}
-
-function getDropTargetFrameId(currentNodes, draggedNodeIds) {
-  const lookup = new Map(currentNodes.map((node) => [node.id, node]));
-  const frames = currentNodes.filter((node) => node.type === "frame");
-  const targets = currentNodes
-    .filter((node) => draggedNodeIds.includes(node.id) && node.type !== "frame")
-    .map((node) => findBestFrameForNode(node, frames, lookup)?.id ?? null)
-    .filter(Boolean);
-
-  if (!targets.length) {
-    return null;
-  }
-
-  return targets.every((id) => id === targets[0]) ? targets[0] : null;
-}
-
-function placeNodesIntoFrames(currentNodes, draggedNodeIds) {
-  const lookup = new Map(currentNodes.map((node) => [node.id, node]));
-  const frames = currentNodes.filter((node) => node.type === "frame");
-  const draggedNodeSet = new Set(draggedNodeIds);
-  let changed = false;
-
-  const nextNodes = currentNodes.map((node) => {
-    if (!draggedNodeSet.has(node.id) || node.type === "frame") {
-      return node;
-    }
-
-    const targetFrame = findBestFrameForNode(node, frames, lookup);
-    if (!targetFrame || targetFrame.id === node.parentId) {
-      return node;
-    }
-
-    const absolutePosition = getAbsolutePosition(node, lookup);
-    const { width, height } = getNodeSize(node);
-    const targetBounds = getFrameInteriorBounds(targetFrame, lookup);
-    changed = true;
-
-    return {
-      ...node,
-      parentId: targetFrame.id,
-      extent: "parent",
-      position: {
-        x: clamp(
-          absolutePosition.x - targetBounds.absolutePosition.x,
-          frameInteriorPadding.left,
-          Math.max(
-            frameInteriorPadding.left,
-            targetBounds.width - width - frameInteriorPadding.right,
-          ),
-        ),
-        y: clamp(
-          absolutePosition.y - targetBounds.absolutePosition.y,
-          frameInteriorPadding.top,
-          Math.max(
-            frameInteriorPadding.top,
-            targetBounds.height - height - frameInteriorPadding.bottom,
-          ),
-        ),
-      },
-    };
-  });
-
-  return changed ? sortNodesByHierarchy(nextNodes) : currentNodes;
-}
-
 function buildSceneGraph(nodes, edges, viewport) {
   const lookup = new Map(nodes.map((node) => [node.id, node]));
-  const childMap = new Map();
 
-  for (const node of nodes) {
-    if (!node.parentId) {
-      continue;
-    }
-
-    const childIds = childMap.get(node.parentId) ?? [];
-    childIds.push(node.id);
-    childMap.set(node.parentId, childIds);
-  }
-
-  const objects = [];
-  const frames = [];
-
-  for (const node of sortNodesByHierarchy(nodes)) {
-    const absolutePosition = getAbsolutePosition(node, lookup);
+  const objects = nodes.map((node) => {
     const size = getNodeSize(node);
-    const geometry = {
-      x: roundNumber(absolutePosition.x),
-      y: roundNumber(absolutePosition.y),
-      w: roundNumber(size.width),
-      h: roundNumber(size.height),
-    };
-
-    if (node.type === "frame") {
-      frames.push({
-        id: node.id,
-        type: "frame",
-        content: {
-          title: node.data.label,
-        },
-        geometry,
-        childIds: childMap.get(node.id) ?? [],
-      });
-      continue;
-    }
-
-    objects.push({
+    return {
       id: node.id,
       type: node.type === "stickyNote" ? "sticky-note" : "text-label",
       content: {
         text: node.data.label,
       },
-      geometry,
-      parentFrameId: node.parentId ?? null,
-    });
-  }
+      geometry: {
+        x: roundNumber(node.position.x),
+        y: roundNumber(node.position.y),
+        w: roundNumber(size.width),
+        h: roundNumber(size.height),
+      },
+    };
+  });
 
   const connectors = edges.map((edge) => {
     const sourceNode = lookup.get(edge.source);
@@ -460,13 +208,11 @@ function buildSceneGraph(nodes, edges, viewport) {
                 sourceNode,
                 edge.sourceHandle,
                 "source",
-                lookup,
               ),
               targetPoint: getHandlePoint(
                 targetNode,
                 edge.targetHandle,
                 "target",
-                lookup,
               ),
             }
           : null,
@@ -480,7 +226,6 @@ function buildSceneGraph(nodes, edges, viewport) {
 
   return {
     objects,
-    frames,
     connectors,
     viewport: {
       x: roundNumber(viewport.x),
@@ -491,74 +236,173 @@ function buildSceneGraph(nodes, edges, viewport) {
   };
 }
 
-const initialNodes = sortNodesByHierarchy([
+function getNumericSuffix(id) {
+  const match = /(\d+)$/.exec(id);
+  return match ? Number(match[1]) : 0;
+}
+
+function getNextSequenceValueFromSceneGraph(sceneGraph) {
+  const ids = [
+    ...sceneGraph.objects.map((object) => object.id),
+    ...sceneGraph.connectors.map((connector) => connector.id),
+  ];
+  const maxSuffix = ids.reduce(
+    (currentMax, id) => Math.max(currentMax, getNumericSuffix(id)),
+    0,
+  );
+
+  return maxSuffix + 1;
+}
+
+function buildFlowGraphFromSceneGraph(sceneGraph) {
+  const selection = new Set(sceneGraph.selection ?? []);
+
+  const nodes = sceneGraph.objects.map((object) =>
+    buildNode(
+      object.type === "sticky-note" ? "stickyNote" : "textLabel",
+      object.id,
+      {
+        x: object.geometry.x,
+        y: object.geometry.y,
+      },
+      {
+        data: {
+          label: object.content?.text ?? "",
+        },
+        style: {
+          width: object.geometry.w,
+          height: object.geometry.h,
+        },
+        selected: selection.has(object.id),
+      },
+    ),
+  );
+
+  const edges = sceneGraph.connectors.map((connector) => ({
+    id: connector.id,
+    source: connector.source,
+    target: connector.target,
+    sourceHandle: connector.sourceHandle ?? "right",
+    targetHandle: connector.targetHandle ?? "left",
+    label: connector.content?.label ?? "",
+    selected: selection.has(connector.id),
+    ...defaultEdgeOptions,
+  }));
+
+  return {
+    nodes,
+    edges,
+    nextId: getNextSequenceValueFromSceneGraph(sceneGraph),
+    viewport: sceneGraph.viewport ?? { x: 0, y: 0, zoom: 1 },
+  };
+}
+
+function buildParsedIntent(prompt, canvasState, subgoalCount) {
+  const selectionCount = canvasState.selection.length;
+  const scope = selectionCount
+    ? `${selectionCount} selected item(s)`
+    : "the current canvas";
+
+  return `Apply "${prompt}" to ${scope}. ${subgoalCount} subgoal(s) proposed.`;
+}
+
+function describeAction(action) {
+  switch (action.op) {
+    case "Create":
+      return `Create ${action.object_type} ${action.id}`;
+    case "Select":
+      return `Select ${action.targets.join(", ")}`;
+    case "Move":
+      return `Move ${action.targets.join(", ")} by (${action.delta.dx}, ${action.delta.dy})`;
+    case "Resize":
+      return `Resize ${action.target} to ${action.geometry.w} × ${action.geometry.h}`;
+    case "Connect":
+      return `Connect ${action.source} to ${action.target}`;
+    case "Annotate":
+      return `Annotate ${action.target}`;
+    case "Delete":
+      return `Delete ${action.targets.join(", ")}`;
+    default:
+      return action.op;
+  }
+}
+
+function getActionReferenceIds(action) {
+  const ids = new Set();
+
+  if (Array.isArray(action.targets)) {
+    for (const id of action.targets) {
+      ids.add(id);
+    }
+  }
+
+  for (const key of ["id", "target", "source"]) {
+    if (typeof action[key] === "string") {
+      ids.add(action[key]);
+    }
+  }
+
+  return [...ids];
+}
+
+const initialNodes = [
   buildNode("stickyNote", "node-1", { x: 86, y: 132 }, {
     data: {
-      label: "Sticky notes are for compact ideas.\nDrag them anywhere on the board.",
-    },
-  }),
-  buildNode("textLabel", "node-2", { x: 392, y: 140 }, {
-    data: {
-      label: "CanvasAct whiteboard",
+      label: "Interview 6 graduate students about how they organize papers.",
     },
     style: {
-      width: 260,
-      height: 92,
+      width: 220,
+      height: 144,
     },
   }),
-  buildNode("frame", "node-3", { x: 702, y: 102 }, {
+  buildNode("stickyNote", "node-2", { x: 352, y: 118 }, {
     data: {
-      label: "Delivery lane",
+      label: "Cluster notes into themes: search, reading, annotation, and writing.",
     },
     style: {
-      width: 344,
-      height: 260,
+      width: 224,
+      height: 156,
     },
   }),
-  buildNode("textLabel", "node-4", { x: 34, y: 26 }, {
-    parentId: "node-3",
-    extent: "parent",
+  buildNode("stickyNote", "node-3", { x: 624, y: 152 }, {
     data: {
-      label: "Frames can collect related objects",
+      label: "Arrange the themes into a simple left-to-right pipeline from collection to summary.",
     },
     style: {
-      width: 238,
-      height: 78,
+      width: 236,
+      height: 156,
     },
   }),
-  buildNode("stickyNote", "node-5", { x: 48, y: 102 }, {
-    parentId: "node-3",
-    extent: "parent",
+  buildNode("stickyNote", "node-4", { x: 176, y: 348 }, {
     data: {
-      label: "Drag a note over a frame to drop it inside.",
+      label: "Evaluation notes mention citation export and tag-based filtering.",
     },
     style: {
-      width: 214,
-      height: 146,
+      width: 222,
+      height: 148,
     },
   }),
-]);
-
-const initialEdges = [
-  {
-    id: "edge-1",
-    source: "node-1",
-    target: "node-2",
-    sourceHandle: "right",
-    targetHandle: "left",
-    label: "context",
-    ...defaultEdgeOptions,
-  },
-  {
-    id: "edge-2",
-    source: "node-2",
-    target: "node-5",
-    sourceHandle: "right",
-    targetHandle: "left",
-    label: "handoff",
-    ...defaultEdgeOptions,
-  },
+  buildNode("stickyNote", "node-5", { x: 454, y: 360 }, {
+    data: {
+      label: "Capture friction points around switching between papers, tags, and notes.",
+    },
+    style: {
+      width: 232,
+      height: 150,
+    },
+  }),
+  buildNode("stickyNote", "node-6", { x: 744, y: 346 }, {
+    data: {
+      label: "Add arrows to show which themes feed into the final outline.",
+    },
+    style: {
+      width: 230,
+      height: 150,
+    },
+  }),
 ];
+
+const initialEdges = [];
 
 function Whiteboard() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -570,25 +414,28 @@ function Whiteboard() {
     message: "Describe a task to preview subgoals and atomic actions.",
   });
   const [planPreview, setPlanPreview] = useState(null);
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [editedActionsJson, setEditedActionsJson] = useState("");
+  const [actionHistory, setActionHistory] = useState([]);
+  const [hoveredReferenceIds, setHoveredReferenceIds] = useState([]);
   const [syncState, setSyncState] = useState({
     status: "idle",
     message: "Scene graph has not been sent yet.",
   });
-  const [dropTargetFrameId, setDropTargetFrameId] = useState(null);
   const [, setHistoryVersion] = useState(0);
-  const nextIdRef = useRef(6);
+
+  const nextIdRef = useRef(7);
   const historyRef = useRef({
     past: [],
     future: [],
   });
   const interactionSnapshotRef = useRef(null);
+  const aiActionHistoryIdRef = useRef(1);
   const reactFlow = useReactFlow();
   const viewport = useViewport();
 
   const selectedNodes = nodes.filter((node) => node.selected);
   const selectedEdges = edges.filter((edge) => edge.selected);
-  const selectedFrames = selectedNodes.filter((node) => node.type === "frame");
-  const selectedContentNodes = selectedNodes.filter((node) => node.type !== "frame");
   const selectedNode =
     selectedNodes.length === 1 && selectedEdges.length === 0
       ? selectedNodes[0]
@@ -598,40 +445,54 @@ function Whiteboard() {
       ? selectedEdges[0]
       : null;
   const canDelete = selectedNodes.length > 0 || selectedEdges.length > 0;
-  const canGroup =
-    selectedContentNodes.length > 0 && selectedFrames.length <= 1;
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
   const isPlanning = plannerState.status === "planning";
+  const isExecuting = plannerState.status === "executing";
   const sceneGraph = buildSceneGraph(nodes, edges, viewport);
   const sceneGraphJson = JSON.stringify(sceneGraph, null, 2);
+  const sceneGraphSignature = JSON.stringify(sceneGraph);
+  const flattenedPlanActions = planPreview
+    ? planPreview.steps.flatMap((step) => step.actions)
+    : [];
+  const targetInspectorEntries = planPreview
+    ? planPreview.steps.flatMap((step, stepIndex) => [
+        ...step.referenceResolution.resolvedReferences.map((entry) => ({
+          ...entry,
+          kind: "resolved",
+          stepId: step.id,
+          stepIndex,
+        })),
+        ...step.referenceResolution.ambiguousReferences.map((entry) => ({
+          ...entry,
+          kind: "ambiguous",
+          stepId: step.id,
+          stepIndex,
+        })),
+        ...step.referenceResolution.unresolvedReferences.map((entry) => ({
+          ...entry,
+          kind: "unresolved",
+          stepId: step.id,
+          stepIndex,
+        })),
+      ])
+    : [];
+  const latestExecutedAiEntry = actionHistory.find(
+    (entry) => entry.status === "executed" && !entry.undone,
+  );
+  const canUndoLastAiAction =
+    !!latestExecutedAiEntry &&
+    !isExecuting &&
+    sceneGraphSignature === JSON.stringify(latestExecutedAiEntry.canvasStateAfter);
 
-  const flowNodes = nodes.map((node) => ({
-    ...node,
-    data: {
-      ...node.data,
-      isDropTarget: dropTargetFrameId === node.id,
-      onResizeStart: beginInteraction,
-      onResizeEnd: () => {
-        requestAnimationFrame(() => {
-          finalizeInteraction();
-        });
-      },
-    },
-  }));
-
-  function snapshotCurrent(currentNodes = nodes, currentEdges = edges) {
-    return createSnapshot(currentNodes, currentEdges, nextIdRef.current);
+  function snapshotFromState(nextNodes = nodes, nextEdges = edges) {
+    return createSnapshot(nextNodes, nextEdges, nextIdRef.current);
   }
 
-  function pushHistorySnapshot(snapshot) {
+  function pushSnapshotToHistory(snapshot) {
     const history = historyRef.current;
     const lastSnapshot = history.past[history.past.length - 1];
-
-    if (
-      lastSnapshot &&
-      snapshotSignature(lastSnapshot) === snapshotSignature(snapshot)
-    ) {
+    if (lastSnapshot && snapshotSignature(lastSnapshot) === snapshotSignature(snapshot)) {
       return;
     }
 
@@ -640,56 +501,62 @@ function Whiteboard() {
       history.past.shift();
     }
     history.future = [];
-    setHistoryVersion((version) => version + 1);
+    setHistoryVersion((value) => value + 1);
   }
 
-  function applySnapshot(snapshot) {
+  function replaceFlowState(snapshot) {
     setNodes(cloneSnapshotData(snapshot.nodes));
     setEdges(cloneSnapshotData(snapshot.edges));
     nextIdRef.current = snapshot.nextId;
-    setDropTargetFrameId(null);
   }
 
-  function beginInteraction() {
-    interactionSnapshotRef.current = snapshotCurrent();
+  function applyCanvasState(canvasState) {
+    const flowGraph = buildFlowGraphFromSceneGraph(canvasState);
+    setNodes(flowGraph.nodes);
+    setEdges(flowGraph.edges);
+    nextIdRef.current = flowGraph.nextId;
+    reactFlow.setViewport(flowGraph.viewport, { duration: 0 });
   }
 
-  function finalizeInteraction(currentNodes = nodes, currentEdges = edges) {
-    const interactionSnapshot = interactionSnapshotRef.current;
+  function logAiHistory(entry) {
+    const timestamp = new Intl.DateTimeFormat([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date());
+
+    setActionHistory((current) => [
+      {
+        id: `ai-history-${aiActionHistoryIdRef.current++}`,
+        timestamp,
+        undone: false,
+        ...entry,
+      },
+      ...current,
+    ].slice(0, 24));
+  }
+
+  function captureInteractionStart() {
+    interactionSnapshotRef.current = snapshotFromState();
+  }
+
+  function commitInteraction(nextNodes = nodes, nextEdges = edges) {
+    const initialSnapshot = interactionSnapshotRef.current;
     interactionSnapshotRef.current = null;
-
-    if (!interactionSnapshot) {
+    if (!initialSnapshot) {
       return;
     }
 
     const currentSnapshot = createSnapshot(
-      currentNodes,
-      currentEdges,
+      nextNodes,
+      nextEdges,
       nextIdRef.current,
     );
-
-    if (
-      snapshotSignature(interactionSnapshot) ===
-      snapshotSignature(currentSnapshot)
-    ) {
+    if (snapshotSignature(initialSnapshot) === snapshotSignature(currentSnapshot)) {
       return;
     }
 
-    const history = historyRef.current;
-    const lastSnapshot = history.past[history.past.length - 1];
-
-    if (
-      !lastSnapshot ||
-      snapshotSignature(lastSnapshot) !== snapshotSignature(interactionSnapshot)
-    ) {
-      history.past.push(interactionSnapshot);
-      if (history.past.length > historyLimit) {
-        history.past.shift();
-      }
-    }
-
-    history.future = [];
-    setHistoryVersion((version) => version + 1);
+    pushSnapshotToHistory(initialSnapshot);
   }
 
   function undo() {
@@ -698,11 +565,11 @@ function Whiteboard() {
       return;
     }
 
-    const currentSnapshot = snapshotCurrent();
+    const currentSnapshot = snapshotFromState();
     const previousSnapshot = history.past.pop();
     history.future.push(currentSnapshot);
-    applySnapshot(previousSnapshot);
-    setHistoryVersion((version) => version + 1);
+    replaceFlowState(previousSnapshot);
+    setHistoryVersion((value) => value + 1);
   }
 
   function redo() {
@@ -711,11 +578,11 @@ function Whiteboard() {
       return;
     }
 
-    const currentSnapshot = snapshotCurrent();
+    const currentSnapshot = snapshotFromState();
     const nextSnapshot = history.future.pop();
     history.past.push(currentSnapshot);
-    applySnapshot(nextSnapshot);
-    setHistoryVersion((version) => version + 1);
+    replaceFlowState(nextSnapshot);
+    setHistoryVersion((value) => value + 1);
   }
 
   function nextId(prefix) {
@@ -724,90 +591,64 @@ function Whiteboard() {
     return id;
   }
 
-  function updateDropTarget(draggedNodes) {
-    const mergedNodes = mergeDraggedNodes(nodes, draggedNodes);
-    const draggedIds = draggedNodes.map((node) => node.id);
-    setDropTargetFrameId(getDropTargetFrameId(mergedNodes, draggedIds));
-  }
-
-  function finalizeDraggedNodes(draggedNodes) {
-    const mergedNodes = mergeDraggedNodes(nodes, draggedNodes);
-    const draggedIds = draggedNodes.map((node) => node.id);
-    const nextNodes = placeNodesIntoFrames(mergedNodes, draggedIds);
-
-    setNodes(nextNodes);
-    setDropTargetFrameId(null);
-    finalizeInteraction(nextNodes, edges);
-  }
-
-  function createNode(type) {
-    pushHistorySnapshot(snapshotCurrent());
-
+  function createCanvasNode(type) {
+    pushSnapshotToHistory(snapshotFromState());
     const center = reactFlow.screenToFlowPosition({
       x: window.innerWidth * 0.52,
       y: window.innerHeight * 0.5,
     });
+    const template = nodeTemplates[type];
     const offset = (nextIdRef.current % 4) * 24;
-    const id = nextId("node");
-    const newNode = buildNode(type, id, {
-      x: center.x - nodeTemplates[type].width / 2 + offset,
-      y: center.y - nodeTemplates[type].height / 2 + offset,
-    }, {
-      selected: true,
-    });
+    const node = buildNode(
+      type,
+      nextId("node"),
+      {
+        x: center.x - template.width / 2 + offset,
+        y: center.y - template.height / 2 + offset,
+      },
+      {
+        selected: true,
+      },
+    );
 
-    setEdges((currentEdges) =>
-      currentEdges.map((edge) => ({ ...edge, selected: false })),
-    );
-    setNodes((currentNodes) =>
-      sortNodesByHierarchy([
-        ...currentNodes.map((node) => ({ ...node, selected: false })),
-        newNode,
-      ]),
-    );
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
+    setNodes((current) => [
+      ...current.map((item) => ({ ...item, selected: false })),
+      node,
+    ]);
     setMode("select");
   }
 
-  function deleteSelection() {
+  function deleteSelectedItems() {
     if (!canDelete) {
       return;
     }
 
-    pushHistorySnapshot(snapshotCurrent());
+    pushSnapshotToHistory(snapshotFromState());
+    const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+    const selectedEdgeIds = new Set(selectedEdges.map((edge) => edge.id));
 
-    const nodeIdsToDelete = collectDescendantIds(
-      nodes,
-      selectedNodes.map((node) => node.id),
-    );
-    const edgeIdsToDelete = new Set(selectedEdges.map((edge) => edge.id));
-
-    setEdges((currentEdges) =>
-      currentEdges.filter(
+    setEdges((current) =>
+      current.filter(
         (edge) =>
-          !edgeIdsToDelete.has(edge.id) &&
-          !nodeIdsToDelete.has(edge.source) &&
-          !nodeIdsToDelete.has(edge.target),
+          !selectedEdgeIds.has(edge.id) &&
+          !selectedNodeIds.has(edge.source) &&
+          !selectedNodeIds.has(edge.target),
       ),
     );
-    setNodes((currentNodes) =>
-      currentNodes.filter((node) => !nodeIdsToDelete.has(node.id)),
+    setNodes((current) =>
+      current.filter((node) => !selectedNodeIds.has(node.id)),
     );
   }
 
-  function annotateSelection(value) {
-    if (selectedNode && selectedNode.data.label === value) {
+  function handleAnnotationChange(value) {
+    if (!selectedNode && !selectedEdge) {
       return;
     }
-
-    if (selectedEdge && (selectedEdge.label ?? "") === value) {
-      return;
-    }
-
-    pushHistorySnapshot(snapshotCurrent());
 
     if (selectedNode) {
-      setNodes((currentNodes) =>
-        currentNodes.map((node) =>
+      setNodes((current) =>
+        current.map((node) =>
           node.id === selectedNode.id
             ? {
                 ...node,
@@ -819,176 +660,62 @@ function Whiteboard() {
             : node,
         ),
       );
-    }
-
-    if (selectedEdge) {
-      setEdges((currentEdges) =>
-        currentEdges.map((edge) =>
-          edge.id === selectedEdge.id
-            ? {
-                ...edge,
-                label: value,
-              }
-            : edge,
-        ),
-      );
-    }
-  }
-
-  function groupIntoFrame() {
-    if (!canGroup) {
       return;
     }
 
-    pushHistorySnapshot(snapshotCurrent());
-
-    const selectedFrame = selectedFrames[0] ?? null;
-
-    setEdges((currentEdges) =>
-      currentEdges.map((edge) => ({ ...edge, selected: false })),
-    );
-    setNodes((currentNodes) => {
-      const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
-      const candidates = currentNodes.filter((node) =>
-        selectedContentNodes.some((selected) => selected.id === node.id),
-      );
-      const measuredNodes = candidates.map((node) => {
-        const size = getNodeSize(node);
-
-        return {
-          ...node,
-          position: getAbsolutePosition(node, nodesById),
-          width: size.width,
-          height: size.height,
-        };
-      });
-
-      let frameId = selectedFrame?.id;
-      let nextNodes = currentNodes.map((node) => ({ ...node, selected: false }));
-
-      if (!frameId) {
-        const bounds = getNodesBounds(measuredNodes);
-        const newFrame = buildNode(
-          "frame",
-          nextId("frame"),
-          {
-            x: bounds.x - framePadding.x,
-            y: bounds.y - framePadding.top,
-          },
-          {
-            data: {
-              label: `Frame ${nextNodes.filter((node) => node.type === "frame").length + 1}`,
-            },
-            style: {
-              width: Math.max(280, bounds.width + framePadding.x * 2),
-              height: Math.max(
-                190,
-                bounds.height + framePadding.top + framePadding.bottom,
-              ),
-            },
-            selected: true,
-          },
-        );
-
-        frameId = newFrame.id;
-        nextNodes = [...nextNodes, newFrame];
-      }
-
-      const latestLookup = new Map(nextNodes.map((node) => [node.id, node]));
-      const frameNode = latestLookup.get(frameId);
-      const frameAbsolutePosition = getAbsolutePosition(frameNode, latestLookup);
-
-      nextNodes = nextNodes.map((node) => {
-        if (!selectedContentNodes.some((selected) => selected.id === node.id)) {
-          if (node.id === frameId) {
-            return { ...node, selected: true };
-          }
-
-          return node;
-        }
-
-        const absolutePosition = getAbsolutePosition(node, nodesById);
-
-        return {
-          ...node,
-          parentId: frameId,
-          extent: "parent",
-          position: {
-            x: Math.max(16, absolutePosition.x - frameAbsolutePosition.x),
-            y: Math.max(44, absolutePosition.y - frameAbsolutePosition.y),
-          },
-          selected: false,
-        };
-      });
-
-      return sortNodesByHierarchy(nextNodes);
-    });
-    setMode("select");
-  }
-
-  function handleConnect(connection) {
-    if (mode !== "connect" || !connection.source || !connection.target) {
-      return;
-    }
-
-    pushHistorySnapshot(snapshotCurrent());
-
-    setEdges((currentEdges) =>
-      addEdge(
-        {
-          ...connection,
-          id: nextId("edge"),
-          label: "link",
-          ...defaultEdgeOptions,
-        },
-        currentEdges.map((edge) => ({ ...edge, selected: false })),
+    setEdges((current) =>
+      current.map((edge) =>
+        edge.id === selectedEdge.id
+          ? {
+              ...edge,
+              label: value,
+            }
+          : edge,
       ),
     );
-    setNodes((currentNodes) =>
-      currentNodes.map((node) => ({ ...node, selected: false })),
-    );
-    setMode("select");
   }
 
-  function exportSceneGraph() {
-    const blob = new Blob([sceneGraphJson], {
-      type: "application/json;charset=utf-8",
+  async function postJson(url, payload, fallbackMessage) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "canvas-state.json";
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message ?? fallbackMessage);
+    }
+    return data;
   }
 
-  async function sendSceneGraph() {
+  async function persistCanvasState(
+    canvasState = sceneGraph,
+    sendingMessage = "Sending canvas state to backend...",
+  ) {
     setSyncState({
       status: "sending",
-      message: "Sending canvas state to backend...",
+      message: sendingMessage,
     });
 
+    const payload = await postJson(
+      "/api/canvas-state",
+      canvasState,
+      "Backend rejected canvas state.",
+    );
+
+    setSyncState({
+      status: "success",
+      message: `Saved ${payload.counts.objects} object(s) and ${payload.counts.connectors} connector(s).`,
+    });
+
+    return payload;
+  }
+
+  async function handleSendSceneGraph() {
     try {
-      const response = await fetch("/api/canvas-state", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: sceneGraphJson,
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.message ?? "Backend rejected canvas state.");
-      }
-
-      setSyncState({
-        status: "success",
-        message: `Saved ${payload.counts.objects} object(s), ${payload.counts.frames} frame(s), and ${payload.counts.connectors} connector(s).`,
-      });
+      await persistCanvasState(sceneGraph);
     } catch (error) {
       setSyncState({
         status: "error",
@@ -997,28 +724,209 @@ function Whiteboard() {
     }
   }
 
-  async function postJson(endpoint, payload, fallbackMessage) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+  function downloadSceneGraph() {
+    const blob = new Blob([sceneGraphJson], {
+      type: "application/json;charset=utf-8",
     });
-    const responsePayload = await response.json().catch(() => ({}));
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "canvas-state.json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 
-    if (!response.ok) {
-      throw new Error(responsePayload.message ?? fallbackMessage);
+  function clearPlan() {
+    setPlanPreview(null);
+    setIsEditingPlan(false);
+    setEditedActionsJson("");
+    setHoveredReferenceIds([]);
+    setPlannerState({
+      status: "idle",
+      message: "Plan cleared. Enter a new command to inspect the next AI run.",
+    });
+  }
+
+  function togglePlanEditing() {
+    if (!planPreview) {
+      return;
     }
 
-    return responsePayload;
+    if (isEditingPlan) {
+      setIsEditingPlan(false);
+      return;
+    }
+
+    setEditedActionsJson(JSON.stringify(flattenedPlanActions, null, 2));
+    setIsEditingPlan(true);
+  }
+
+  function getPlannedActionsForExecution() {
+    if (!planPreview) {
+      return [];
+    }
+
+    if (!isEditingPlan) {
+      return flattenedPlanActions;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(editedActionsJson);
+    } catch (error) {
+      throw new Error(`Edited actions must be valid JSON: ${error.message}`);
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("Edited actions must be a JSON array.");
+    }
+
+    return parsed;
+  }
+
+  async function executePlan() {
+    if (!planPreview) {
+      return;
+    }
+
+    let actions;
+    try {
+      actions = getPlannedActionsForExecution();
+    } catch (error) {
+      setPlannerState({
+        status: "error",
+        message: error.message,
+      });
+      return;
+    }
+
+    if (!actions.length) {
+      setPlannerState({
+        status: "error",
+        message: "Nothing to execute. The action list is empty.",
+      });
+      return;
+    }
+
+    const beforeCanvasState = cloneSnapshotData(sceneGraph);
+    pushSnapshotToHistory(snapshotFromState());
+    setPlannerState({
+      status: "executing",
+      message: `Executing ${actions.length} atomic action(s)...`,
+    });
+
+    try {
+      const payload = await postJson(
+        "/api/canvas-actions",
+        {
+          actions,
+          canvasState: beforeCanvasState,
+        },
+        "Failed to execute atomic actions.",
+      );
+
+      applyCanvasState(payload.canvasState);
+      logAiHistory({
+        status: "executed",
+        prompt: planPreview.prompt,
+        parsedIntent: planPreview.parsedIntent,
+        subgoalCount: planPreview.steps.length,
+        actionCount: actions.length,
+        actions: cloneSnapshotData(actions),
+        canvasStateBefore: beforeCanvasState,
+        canvasStateAfter: cloneSnapshotData(payload.canvasState),
+      });
+      setPlanPreview(null);
+      setIsEditingPlan(false);
+      setEditedActionsJson("");
+      setHoveredReferenceIds([]);
+      setChatPrompt("");
+      setPlannerState({
+        status: "success",
+        message: `Executed ${actions.length} action(s). Review the action history to undo the AI batch if needed.`,
+      });
+
+      try {
+        await persistCanvasState(
+          payload.canvasState,
+          "Persisting executed AI result...",
+        );
+      } catch (error) {
+        setSyncState({
+          status: "error",
+          message: error.message,
+        });
+      }
+    } catch (error) {
+      logAiHistory({
+        status: "failed",
+        prompt: planPreview.prompt,
+        parsedIntent: planPreview.parsedIntent,
+        subgoalCount: planPreview.steps.length,
+        actionCount: actions.length,
+        actions: cloneSnapshotData(actions),
+        error: error.message,
+      });
+      setPlannerState({
+        status: "error",
+        message: error.message,
+      });
+    }
+  }
+
+  async function undoLastAiAction() {
+    if (!latestExecutedAiEntry || !canUndoLastAiAction) {
+      return;
+    }
+
+    pushSnapshotToHistory(snapshotFromState());
+    setPlannerState({
+      status: "executing",
+      message: `Undoing AI batch from ${latestExecutedAiEntry.timestamp}...`,
+    });
+
+    try {
+      applyCanvasState(latestExecutedAiEntry.canvasStateBefore);
+      setActionHistory((current) =>
+        current.map((entry) =>
+          entry.id === latestExecutedAiEntry.id
+            ? {
+                ...entry,
+                undone: true,
+              }
+            : entry,
+        ),
+      );
+      setPlannerState({
+        status: "success",
+        message: "Undid the last executed AI batch.",
+      });
+
+      try {
+        await persistCanvasState(
+          latestExecutedAiEntry.canvasStateBefore,
+          "Persisting AI undo...",
+        );
+      } catch (error) {
+        setSyncState({
+          status: "error",
+          message: error.message,
+        });
+      }
+    } catch (error) {
+      setPlannerState({
+        status: "error",
+        message: error.message,
+      });
+    }
   }
 
   async function handlePromptSubmit(event) {
     event.preventDefault();
-
-    const trimmedPrompt = chatPrompt.trim();
-    if (!trimmedPrompt) {
+    const prompt = chatPrompt.trim();
+    if (!prompt) {
       return;
     }
 
@@ -1027,21 +935,23 @@ function Whiteboard() {
       message: "Decomposing prompt into subgoals...",
     });
     setPlanPreview(null);
+    setIsEditingPlan(false);
+    setEditedActionsJson("");
+    setHoveredReferenceIds([]);
 
     try {
       let workingCanvasState = cloneSnapshotData(sceneGraph);
       const subgoalPayload = await postJson(
         "/api/llm/subgoals",
         {
-          prompt: trimmedPrompt,
+          prompt,
           canvasState: workingCanvasState,
         },
         "Failed to generate subgoals.",
       );
 
       const steps = [];
-
-      for (const [index, entry] of subgoalPayload.subgoals.entries()) {
+      for (const [index, subgoalEntry] of subgoalPayload.subgoals.entries()) {
         setPlannerState({
           status: "planning",
           message: `Planning actions for subgoal ${index + 1} of ${subgoalPayload.subgoals.length}...`,
@@ -1050,13 +960,13 @@ function Whiteboard() {
         const actionPayload = await postJson(
           "/api/llm/actions",
           {
-            subgoal: entry.subgoal,
+            subgoal: subgoalEntry.subgoal,
             canvasState: workingCanvasState,
           },
           "Failed to generate atomic actions.",
         );
 
-        const previewPayload = await postJson(
+        const simulationPayload = await postJson(
           "/api/canvas-actions",
           {
             actions: actionPayload.actions,
@@ -1068,25 +978,27 @@ function Whiteboard() {
 
         steps.push({
           id: `plan-step-${index + 1}`,
-          subgoal: entry.subgoal,
+          subgoal: subgoalEntry.subgoal,
           actions: actionPayload.actions,
-          referenceResolution: actionPayload.referenceResolution ?? {
-            resolvedReferences: [],
-            ambiguousReferences: [],
-            unresolvedReferences: [],
-          },
+          referenceResolution:
+            actionPayload.referenceResolution ?? emptyReferenceResolution,
+          failureLog: actionPayload.failureLog ?? [],
         });
-
-        workingCanvasState = previewPayload.canvasState;
+        workingCanvasState = simulationPayload.canvasState;
       }
 
       const totalActions = steps.reduce(
-        (sum, step) => sum + step.actions.length,
+        (count, step) => count + step.actions.length,
         0,
       );
 
       setPlanPreview({
-        prompt: trimmedPrompt,
+        prompt,
+        parsedIntent: buildParsedIntent(
+          prompt,
+          sceneGraph,
+          subgoalPayload.subgoals.length,
+        ),
         steps,
         finalCanvasState: workingCanvasState,
         totalActions,
@@ -1096,12 +1008,51 @@ function Whiteboard() {
         message: `Planned ${steps.length} subgoal(s) and ${totalActions} action(s). Review the preview before execution.`,
       });
     } catch (error) {
+      logAiHistory({
+        status: "failed",
+        prompt,
+        parsedIntent: prompt,
+        subgoalCount: 0,
+        actionCount: 0,
+        actions: [],
+        error: error.message,
+      });
       setPlannerState({
         status: "error",
         message: error.message,
       });
     }
   }
+
+  function handleConnect(connection) {
+    if (mode !== "connect" || !connection.source || !connection.target) {
+      return;
+    }
+
+    pushSnapshotToHistory(snapshotFromState());
+    setEdges((current) =>
+      addEdge(
+        {
+          ...connection,
+          id: nextId("edge"),
+          label: "",
+          sourceHandle: connection.sourceHandle ?? "right",
+          targetHandle: connection.targetHandle ?? "left",
+          selected: true,
+          ...defaultEdgeOptions,
+        },
+        current.map((edge) => ({ ...edge, selected: false })),
+      ),
+    );
+    setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+    setMode("select");
+  }
+
+  useEffect(() => {
+    if (!planPreview && hoveredReferenceIds.length > 0) {
+      setHoveredReferenceIds([]);
+    }
+  }, [planPreview, hoveredReferenceIds.length]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -1110,9 +1061,9 @@ function Whiteboard() {
       }
 
       const key = event.key.toLowerCase();
-      const isMetaKey = event.metaKey || event.ctrlKey;
+      const hasModifier = event.metaKey || event.ctrlKey;
 
-      if (isMetaKey && key === "z" && !event.altKey) {
+      if (hasModifier && key === "z" && !event.altKey) {
         event.preventDefault();
         if (event.shiftKey) {
           redo();
@@ -1122,7 +1073,7 @@ function Whiteboard() {
         return;
       }
 
-      if (isMetaKey && key === "y" && !event.altKey) {
+      if (hasModifier && key === "y" && !event.altKey) {
         event.preventDefault();
         redo();
         return;
@@ -1130,40 +1081,48 @@ function Whiteboard() {
 
       if ((event.key === "Backspace" || event.key === "Delete") && canDelete) {
         event.preventDefault();
-        deleteSelection();
+        deleteSelectedItems();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
-
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canDelete, deleteSelection, redo, undo]);
+  }, [canDelete]);
+
+  const decoratedNodes = nodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      isAiHighlighted: hoveredReferenceIds.includes(node.id),
+      onResizeStart: captureInteractionStart,
+      onResizeEnd: () => {
+        requestAnimationFrame(() => {
+          commitInteraction();
+        });
+      },
+    },
+  }));
+
+  const decoratedEdges = edges.map((edge) => ({
+    ...edge,
+    className: hoveredReferenceIds.includes(edge.id) ? "ai-highlighted-edge" : "",
+  }));
 
   return (
     <div className="whiteboard-shell" data-mode={mode}>
       <ReactFlow
-        nodes={flowNodes}
-        edges={edges}
+        nodes={decoratedNodes}
+        edges={decoratedEdges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
-        onNodeDragStart={() => beginInteraction()}
-        onNodeDrag={(_event, node) => updateDropTarget([node])}
-        onNodeDragStop={(_event, node) => {
-          if (node.selected && selectedNodes.length > 1) {
-            return;
-          }
-
-          finalizeDraggedNodes([node]);
-        }}
-        onSelectionDragStart={() => beginInteraction()}
-        onSelectionDrag={(_event, draggedNodes) => updateDropTarget(draggedNodes)}
-        onSelectionDragStop={(_event, draggedNodes) =>
-          finalizeDraggedNodes(draggedNodes)
-        }
+        onNodeDragStart={captureInteractionStart}
+        onNodeDragStop={() => commitInteraction()}
+        onSelectionDragStart={captureInteractionStart}
+        onSelectionDragStop={() => commitInteraction()}
         connectionMode={ConnectionMode.Loose}
         defaultEdgeOptions={defaultEdgeOptions}
         nodesConnectable={mode === "connect"}
@@ -1175,12 +1134,11 @@ function Whiteboard() {
         fitViewOptions={{ padding: 0.18 }}
         minZoom={0.35}
         maxZoom={1.8}
-        panOnDrag={mode === "select"}
+        panOnDrag={false}
+        panActivationKeyCode="Space"
         selectionOnDrag={mode === "select"}
         selectionMode={SelectionMode.Partial}
-        isValidConnection={(connection) =>
-          connection.source !== connection.target
-        }
+        isValidConnection={(connection) => connection.source !== connection.target}
       >
         <Background
           color="#c0cad6"
@@ -1193,27 +1151,24 @@ function Whiteboard() {
           <div className="panel-kicker">CanvasAct</div>
           <h1>Whiteboard</h1>
           <p className="panel-copy">
-            The scene graph is explicit: stable ids, content, geometry,
-            viewport, selection, frames, and connectors.
+            The scene graph is explicit: stable ids, content, geometry, viewport,
+            selection, objects, and connectors.
           </p>
 
           <section className="panel-section">
             <div className="section-label">Create</div>
             <div className="button-row">
-              <button type="button" onClick={() => createNode("stickyNote")}>
+              <button type="button" onClick={() => createCanvasNode("stickyNote")}>
                 Sticky note
               </button>
-              <button type="button" onClick={() => createNode("textLabel")}>
+              <button type="button" onClick={() => createCanvasNode("textLabel")}>
                 Text label
-              </button>
-              <button type="button" onClick={() => createNode("frame")}>
-                Frame
               </button>
             </div>
           </section>
 
           <section className="panel-section">
-            <div className="section-label">Atomic actions</div>
+            <div className="section-label">Atomic Actions</div>
             <div className="button-row">
               <button
                 type="button"
@@ -1229,21 +1184,11 @@ function Whiteboard() {
               >
                 Connect
               </button>
-              <button
-                type="button"
-                disabled={!canGroup}
-                onClick={groupIntoFrame}
-              >
-                Group Into Frame
-              </button>
-              <button
-                type="button"
-                disabled={!canDelete}
-                onClick={deleteSelection}
-              >
+              <button type="button" disabled={!canDelete} onClick={deleteSelectedItems}>
                 Delete
               </button>
             </div>
+
             <div className="button-row history-row">
               <button type="button" disabled={!canUndo} onClick={undo}>
                 Undo
@@ -1252,12 +1197,34 @@ function Whiteboard() {
                 Redo
               </button>
             </div>
+
             <p className="panel-hint">
-              Drag notes directly onto frames. Undo and redo use
+              Drag notes to move them. Drag on empty canvas to box-select. Hold
+              <code> Space </code>
+              and drag to pan. Undo and redo use
               <code> Cmd/Ctrl+Z </code>
               and
               <code> Shift+Cmd/Ctrl+Z</code>.
             </p>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-label">Scene Graph</div>
+            <div className="button-row">
+              <button type="button" onClick={downloadSceneGraph}>
+                Export JSON
+              </button>
+              <button
+                type="button"
+                className={syncState.status === "sending" ? "is-active" : ""}
+                onClick={handleSendSceneGraph}
+              >
+                Send To Backend
+              </button>
+            </div>
+            <div className={`sync-status sync-status-${syncState.status}`}>
+              {syncState.message}
+            </div>
           </section>
         </Panel>
 
@@ -1267,14 +1234,14 @@ function Whiteboard() {
           {selectedNode ? (
             <>
               <div className="selection-title">
-                {selectedNode.type === "stickyNote" && "Sticky note"}
-                {selectedNode.type === "textLabel" && "Text label"}
-                {selectedNode.type === "frame" && "Frame"}
+                {selectedNode.type === "stickyNote" ? "Sticky note" : "Text label"}
               </div>
               <textarea
                 value={selectedNode.data.label}
-                onChange={(event) => annotateSelection(event.target.value)}
                 rows={selectedNode.type === "textLabel" ? 3 : 6}
+                onFocus={captureInteractionStart}
+                onBlur={() => commitInteraction()}
+                onChange={(event) => handleAnnotationChange(event.target.value)}
               />
             </>
           ) : null}
@@ -1284,142 +1251,291 @@ function Whiteboard() {
               <div className="selection-title">Connector</div>
               <textarea
                 value={selectedEdge.label ?? ""}
-                onChange={(event) => annotateSelection(event.target.value)}
                 rows={3}
+                onFocus={captureInteractionStart}
+                onBlur={() => commitInteraction()}
+                onChange={(event) => handleAnnotationChange(event.target.value)}
               />
             </>
           ) : null}
 
           {!selectedNode && !selectedEdge ? (
             <p className="panel-copy muted">
-              Select one node or connector to edit its annotation.
+              Select one object or connector to edit its annotation.
             </p>
           ) : null}
 
           <div className="selection-stats">
             <span>{sceneGraph.objects.length} object(s)</span>
-            <span>{sceneGraph.frames.length} frame(s)</span>
             <span>{sceneGraph.connectors.length} connector(s)</span>
           </div>
+
+          <section className="panel-section">
+            <div className="section-label">Selection / Targets</div>
+            <p className="panel-copy compact">
+              Hover a resolved reference to see which objects the AI is grounding.
+            </p>
+
+            <div
+              className="reference-item current-selection"
+              onMouseEnter={() => setHoveredReferenceIds(sceneGraph.selection)}
+              onMouseLeave={() => setHoveredReferenceIds([])}
+            >
+              <div className="reference-item-header">
+                <span className="mode-pill">Selection</span>
+                <span className="plan-step-meta">
+                  {sceneGraph.selection.length} id(s)
+                </span>
+              </div>
+              <div className="reference-item-copy">
+                {sceneGraph.selection.length
+                  ? sceneGraph.selection.join(", ")
+                  : "Nothing selected"}
+              </div>
+            </div>
+
+            <div className="reference-list">
+              {targetInspectorEntries.length ? (
+                targetInspectorEntries.map((entry) => (
+                  <article
+                    key={`${entry.stepId}-${entry.kind}-${entry.surfaceText}-${entry.rule}`}
+                    className={`reference-item reference-item-${entry.kind}`}
+                    onMouseEnter={() =>
+                      setHoveredReferenceIds(entry.candidateIds ?? [])
+                    }
+                    onMouseLeave={() => setHoveredReferenceIds([])}
+                  >
+                    <div className="reference-item-header">
+                      <span className="mode-pill">Step {entry.stepIndex + 1}</span>
+                      <span className="plan-step-meta">{entry.kind}</span>
+                    </div>
+                    <div className="reference-item-copy">
+                      <code>{entry.surfaceText}</code>
+                      {" -> "}
+                      {entry.candidateIds?.length ? (
+                        <code>{entry.candidateIds.join(", ")}</code>
+                      ) : (
+                        <span>No resolved ids</span>
+                      )}
+                    </div>
+                    <div className="reference-item-rule">{entry.rule}</div>
+                  </article>
+                ))
+              ) : (
+                <p className="panel-copy muted">
+                  Plan a command to inspect grounded references like
+                  <code> these notes </code>
+                  or
+                  <code> leftmost note </code>
+                  before execution.
+                </p>
+              )}
+            </div>
+          </section>
         </Panel>
 
-        <Panel position="bottom-left" className="flow-panel status-panel">
-          <div className="mode-pill">
-            {mode === "connect" ? "Connect mode" : "Select mode"}
+        <Panel position="bottom-left" className="flow-panel history-panel">
+          <div className="section-label">Action History</div>
+          <div className="button-row">
+            <button
+              type="button"
+              disabled={!canUndoLastAiAction}
+              onClick={undoLastAiAction}
+            >
+              Undo Last AI Action
+            </button>
           </div>
           <p className="panel-copy compact">
-            Box-select with Shift-drag or multi-select with Cmd/Ctrl-click, then
-            move the notes together or drop them into a frame.
+            AI execution stays inspectable here. Manual whiteboard undo/redo is
+            still available in the toolbar.
           </p>
+
+          <div className="history-list">
+            {actionHistory.length ? (
+              actionHistory.map((entry) => (
+                <article
+                  key={entry.id}
+                  className={`history-entry history-entry-${entry.status}`}
+                >
+                  <div className="history-entry-header">
+                    <span className="mode-pill">
+                      {entry.status === "executed" ? "Executed" : "Failed"}
+                    </span>
+                    <span className="plan-step-meta">{entry.timestamp}</span>
+                  </div>
+                  <div className="history-entry-copy">{entry.prompt}</div>
+                  <div className="history-entry-meta">
+                    <span>{entry.subgoalCount} subgoal(s)</span>
+                    <span>{entry.actionCount} action(s)</span>
+                    {entry.undone ? <span>undone</span> : null}
+                  </div>
+
+                  {entry.actions.length ? (
+                    <div className="history-entry-actions">
+                      {entry.actions.map((action, index) => (
+                        <div
+                          key={`${entry.id}-${index}-${action.op}`}
+                          className="history-entry-action"
+                        >
+                          <span className="mode-pill">{action.op}</span>
+                          <span>{describeAction(action)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {entry.error ? (
+                    <div className="history-entry-error">{entry.error}</div>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <p className="panel-copy muted">
+                Planned AI runs will appear here after execution or failure.
+              </p>
+            )}
+          </div>
         </Panel>
 
         <Panel position="bottom-center" className="flow-panel prompt-panel">
-          <div className="section-label">Chat Prompt</div>
+          <div className="section-label">Command Box</div>
           <form className="prompt-form" onSubmit={handlePromptSubmit}>
             <input
               type="text"
               value={chatPrompt}
               onChange={(event) => setChatPrompt(event.target.value)}
-              placeholder="Describe the next whiteboard action..."
+              placeholder='Try "organize selected notes by topic"'
               aria-label="Chat prompt"
             />
-            <button type="submit" disabled={isPlanning || !chatPrompt.trim()}>
-              {isPlanning ? "Planning..." : "Send"}
+            <button type="submit" disabled={isPlanning || isExecuting || !chatPrompt.trim()}>
+              {isPlanning ? "Planning..." : "Plan"}
             </button>
           </form>
-
           <div
             className={`sync-status sync-status-${
-              plannerState.status === "planning"
-                ? "sending"
-                : plannerState.status
+              isPlanning || isExecuting ? "sending" : plannerState.status
             }`}
           >
             {plannerState.message}
           </div>
-
-          {planPreview ? (
-            <section className="plan-preview">
-              <div className="plan-preview-header">
-                <div className="section-label">Plan Preview</div>
-                <div className="scene-meta">
-                  <span>{planPreview.steps.length} subgoal(s)</span>
-                  <span>{planPreview.totalActions} action(s)</span>
-                </div>
-              </div>
-              <p className="panel-copy compact">{planPreview.prompt}</p>
-              <div className="plan-step-list">
-                {planPreview.steps.map((step, index) => (
-                  <article key={step.id} className="plan-step">
-                    <div className="plan-step-header">
-                      <span className="mode-pill">Subgoal {index + 1}</span>
-                      <span className="plan-step-meta">
-                        {step.actions.length} action(s)
-                      </span>
-                    </div>
-                    <div className="plan-step-copy">{step.subgoal}</div>
-
-                    {step.referenceResolution.resolvedReferences.length > 0 ? (
-                      <div className="plan-step-grounding">
-                        {step.referenceResolution.resolvedReferences.map(
-                          (reference) => (
-                            <div
-                              key={`${step.id}-${reference.rule}-${reference.surfaceText}`}
-                              className="plan-step-grounding-item"
-                            >
-                              <code>{reference.surfaceText}</code>
-                              {" -> "}
-                              <code>{reference.candidateIds.join(", ")}</code>
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    ) : null}
-
-                    {step.referenceResolution.ambiguousReferences.length > 0 ? (
-                      <div className="plan-step-warning">
-                        Ambiguous references:{" "}
-                        {step.referenceResolution.ambiguousReferences
-                          .map((reference) => reference.surfaceText)
-                          .join(", ")}
-                      </div>
-                    ) : null}
-
-                    <pre className="plan-json">
-                      {JSON.stringify(step.actions, null, 2)}
-                    </pre>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
+          <p className="panel-copy compact">
+            Type a command, inspect the parsed plan, then execute, edit, or cancel
+            it explicitly.
+          </p>
         </Panel>
 
-        <Panel position="bottom-right" className="flow-panel scene-panel">
-          <div className="section-label">Scene Graph</div>
-          <div className="scene-meta">
-            <span>Selection: {sceneGraph.selection.length}</span>
-            <span>
-              Viewport: {sceneGraph.viewport.x}, {sceneGraph.viewport.y},{" "}
-              {sceneGraph.viewport.zoom}x
-            </span>
+        <Panel position="bottom-right" className="flow-panel plan-panel">
+          <div className="plan-preview-header">
+            <div className="section-label">Plan Panel</div>
+            {planPreview ? (
+              <div className="scene-meta">
+                <span>{planPreview.steps.length} subgoal(s)</span>
+                <span>{planPreview.totalActions} action(s)</span>
+              </div>
+            ) : null}
           </div>
-          <div className="button-row">
-            <button type="button" onClick={exportSceneGraph}>
-              Export JSON
-            </button>
-            <button
-              type="button"
-              className={syncState.status === "sending" ? "is-active" : ""}
-              onClick={sendSceneGraph}
-            >
-              Send To Backend
-            </button>
-          </div>
-          <div className={`sync-status sync-status-${syncState.status}`}>
-            {syncState.message}
-          </div>
-          <pre className="scene-preview">{sceneGraphJson}</pre>
+
+          {planPreview ? (
+            <>
+              <section className="panel-section">
+                <div className="section-label">Parsed Intent</div>
+                <p className="panel-copy compact">{planPreview.parsedIntent}</p>
+              </section>
+
+              <section className="panel-section">
+                <div className="section-label">Subgoals</div>
+                <div className="plan-step-list">
+                  {planPreview.steps.map((step, stepIndex) => (
+                    <article key={step.id} className="plan-step">
+                      <div className="plan-step-header">
+                        <span className="mode-pill">Subgoal {stepIndex + 1}</span>
+                        <span className="plan-step-meta">
+                          {step.actions.length} action(s)
+                        </span>
+                      </div>
+                      <div className="plan-step-copy">{step.subgoal}</div>
+
+                      {step.referenceResolution.ambiguousReferences.length > 0 ? (
+                        <div className="plan-step-warning">
+                          Ambiguous references:{" "}
+                          {step.referenceResolution.ambiguousReferences
+                            .map((entry) => entry.surfaceText)
+                            .join(", ")}
+                        </div>
+                      ) : null}
+
+                      <div className="action-list">
+                        {step.actions.map((action, actionIndex) => (
+                          <article
+                            key={`${step.id}-${actionIndex}-${action.op}`}
+                            className="action-item"
+                            onMouseEnter={() =>
+                              setHoveredReferenceIds(getActionReferenceIds(action))
+                            }
+                            onMouseLeave={() => setHoveredReferenceIds([])}
+                          >
+                            <div className="action-item-header">
+                              <span className="mode-pill">{action.op}</span>
+                              <span className="plan-step-meta">
+                                Action {actionIndex + 1}
+                              </span>
+                            </div>
+                            <div className="action-item-copy">
+                              {describeAction(action)}
+                            </div>
+                            <code className="action-item-json">
+                              {JSON.stringify(action)}
+                            </code>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel-section">
+                <div className="button-row">
+                  <button type="button" disabled={isPlanning || isExecuting} onClick={executePlan}>
+                    Execute
+                  </button>
+                  <button type="button" disabled={isPlanning || isExecuting} onClick={togglePlanEditing}>
+                    {isEditingPlan ? "Stop Editing" : "Edit JSON"}
+                  </button>
+                  <button type="button" disabled={isPlanning || isExecuting} onClick={clearPlan}>
+                    Cancel
+                  </button>
+                </div>
+              </section>
+
+              {isEditingPlan ? (
+                <section className="panel-section">
+                  <div className="section-label">Editable Actions</div>
+                  <textarea
+                    className="plan-editor"
+                    value={editedActionsJson}
+                    rows={14}
+                    spellCheck={false}
+                    onChange={(event) => setEditedActionsJson(event.target.value)}
+                  />
+                </section>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="panel-copy compact">
+                The AI plan becomes visible here before anything is executed.
+              </p>
+              <div className="scene-meta">
+                <span>Selection: {sceneGraph.selection.length}</span>
+                <span>
+                  Viewport: {sceneGraph.viewport.x}, {sceneGraph.viewport.y},{" "}
+                  {sceneGraph.viewport.zoom}x
+                </span>
+              </div>
+              <pre className="scene-preview">{sceneGraphJson}</pre>
+            </>
+          )}
         </Panel>
       </ReactFlow>
     </div>

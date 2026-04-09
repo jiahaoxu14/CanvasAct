@@ -12,13 +12,17 @@ function NodeHandles() {
   );
 }
 
+function getNodeClassName(baseClassName, data) {
+  return `${baseClassName}${data.isAiHighlighted ? " is-ai-highlighted" : ""}`;
+}
+
 export const StickyNoteNode = memo(function StickyNoteNode({
   id,
   data,
   selected,
 }) {
   return (
-    <div className="whiteboard-node whiteboard-node-sticky">
+    <div className={getNodeClassName("whiteboard-node whiteboard-node-sticky", data)}>
       <NodeResizer
         isVisible={selected}
         minWidth={170}
@@ -41,7 +45,7 @@ export const TextLabelNode = memo(function TextLabelNode({
   selected,
 }) {
   return (
-    <div className="whiteboard-node whiteboard-node-text">
+    <div className={getNodeClassName("whiteboard-node whiteboard-node-text", data)}>
       <NodeResizer
         isVisible={selected}
         minWidth={170}
@@ -53,32 +57,6 @@ export const TextLabelNode = memo(function TextLabelNode({
       />
       <NodeHandles />
       <div className="text-label-copy">{data.label}</div>
-    </div>
-  );
-});
-
-export const FrameNode = memo(function FrameNode({ id, data, selected }) {
-  return (
-    <div
-      className={`whiteboard-node whiteboard-node-frame${
-        data.isDropTarget ? " is-drop-target" : ""
-      }`}
-    >
-      <NodeResizer
-        isVisible={selected}
-        minWidth={240}
-        minHeight={180}
-        lineClassName="node-resizer-line"
-        handleClassName="node-resizer-handle"
-        onResizeStart={() => data.onResizeStart?.(id)}
-        onResizeEnd={() => data.onResizeEnd?.(id)}
-      />
-      <NodeHandles />
-      <div className="frame-node-header">
-        <span className="frame-node-chip">Frame</span>
-        <span className="frame-node-title">{data.label}</span>
-      </div>
-      <div className="frame-node-dropzone">Grouped objects stay inside this box.</div>
     </div>
   );
 });

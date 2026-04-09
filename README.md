@@ -50,16 +50,14 @@ Example batch:
 {
   "actions": [
     {
-      "op": "GroupIntoFrame",
-      "targets": ["n1", "n2", "n4"],
-      "frame_id": "f1",
-      "title": "Data Collection"
+      "op": "Select",
+      "targets": ["n1", "n2"]
     },
     {
       "op": "Connect",
       "id": "c1",
-      "source": "f1",
-      "target": "f2",
+      "source": "n1",
+      "target": "n2",
       "label": "next"
     }
   ]
@@ -85,4 +83,4 @@ The LLM planner reads `OPENAI_API_KEY` from `backend/.env`. Optional model overr
 - `OPENAI_SUBGOAL_MODEL`
 - `OPENAI_ACTION_MODEL`
 
-Before `POST /api/llm/actions` calls the model, it runs a deterministic reference resolver for common GUI-grounding phrases such as current selection, keyword-matched notes, left/right/top/bottom filters, and nearest-note lookups. The action response includes `referenceResolution` and `ambiguousReferences` so the caller can inspect what was grounded before the model generated actions.
+Before `POST /api/llm/actions` calls the model, it runs a deterministic reference resolver for common GUI-grounding phrases such as current selection, keyword-matched notes, left/right/top/bottom filters, and nearest-note lookups. The action response includes `referenceResolution` and `failureLog` so the caller can inspect what was grounded and whether the planner needed a repair pass before returning actions.

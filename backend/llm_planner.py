@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from copy import deepcopy
@@ -9,10 +10,10 @@ from urllib import error, request
 from canvas_actions import (
     ACTION_ORDER,
     ACTION_SCHEMAS,
-    execute_action_batch,
-    get_action_catalog,
+    CANVAS_BOUNDS,
     HANDLE_VALUES,
-    validate_action_request,
+    CanvasActionError,
+    execute_action_batch,
     validate_against_schema,
 )
 from canvas_state import empty_canvas_state, validate_canvas_state
@@ -20,9 +21,11 @@ from canvas_state import empty_canvas_state, validate_canvas_state
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
 DEFAULT_ACTION_MODEL = "gpt-5.4"
 ACTION_PLANNING_MAX_ATTEMPTS = 2
+
+logger = logging.getLogger(__name__)
+
 REFERENCE_KIND_PATTERN = (
-    r"notes?|objects?|items?|cards?|labels?|text labels?|frames?|groups?|boxes?|"
-    r"lanes?|connectors?|arrows?|edges?"
+    r"notes?|objects?|items?|cards?|labels?|text labels?|connectors?|arrows?|edges?"
 )
 SELECTION_REFERENCE_RE = re.compile(
     rf"\b(?:(these|selected)\s+(?P<kind>{REFERENCE_KIND_PATTERN})|current selection)\b",
@@ -31,7 +34,7 @@ SELECTION_REFERENCE_RE = re.compile(
 KEYWORD_REFERENCE_RE = re.compile(
     rf"\b(?P<kind>{REFERENCE_KIND_PATTERN})\s+(?:about|with|on)\s+"
     r"(?P<keywords>[a-z0-9][a-z0-9\s-]*?)"
-    r"(?=(?:\s+(?:and|then|into|to|from|within|inside|near|next|closest|nearest|"
+    r"(?=(?:\s+(?:and|then|into|to|from|near|next|closest|nearest|"
     r"leftmost|rightmost|topmost|bottommost|left|right|top|bottom)\b|[,.!?;:]|$))",
     re.IGNORECASE,
 )
@@ -115,18 +118,13 @@ def _nullable_delta_schema() -> dict:
 
 def _build_action_output_item_schema() -> dict:
     properties = {
-        "op": {
-            "type": "string",
-            "enum": list(ACTION_ORDER),
-        },
+        "op": {"type": "string", "enum": list(ACTION_ORDER)},
         "id": _nullable_string_schema(),
         "object_type": _nullable_string_schema(
-            enum=["sticky-note", "text-label", "frame", None],
+            enum=["sticky-note", "text-label", None],
         ),
         "geometry": _nullable_geometry_schema(),
         "text": _nullable_string_schema(),
-        "title": _nullable_string_schema(),
-        "parent_frame_id": _nullable_string_schema(),
         "selected": _nullable_boolean_schema(),
         "targets": _nullable_array_of_strings_schema(),
         "mode": _nullable_string_schema(
@@ -134,20 +132,12 @@ def _build_action_output_item_schema() -> dict:
         ),
         "delta": _nullable_delta_schema(),
         "target": _nullable_string_schema(),
-        "frame_id": _nullable_string_schema(),
         "source": _nullable_string_schema(),
-        "target_handle": _nullable_string_schema(
-            enum=[*HANDLE_VALUES, None],
-        ),
-        "source_handle": _nullable_string_schema(
-            enum=[*HANDLE_VALUES, None],
-        ),
+        "target_handle": _nullable_string_schema(enum=[*HANDLE_VALUES, None]),
+        "source_handle": _nullable_string_schema(enum=[*HANDLE_VALUES, None]),
         "label": _nullable_string_schema(),
-        "field": _nullable_string_schema(
-            enum=["text", "title", "label", None],
-        ),
+        "field": _nullable_string_schema(enum=["text", "label", None]),
     }
-
     return {
         "type": "object",
         "properties": properties,
@@ -209,18 +199,20 @@ ACTION_RESPONSE_SCHEMA = {
     "additionalProperties": False,
 }
 
+ACTION_OUTPUT_ITEM_KEYS = list(_build_action_output_item_schema()["properties"].keys())
+
 
 def validate_subgoal_request(payload: object) -> None:
     try:
         validate_against_schema(SUBGOAL_REQUEST_SCHEMA, payload)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - narrowed by caller tests
         raise LLMPlannerValidationError(str(exc)) from exc
 
 
 def validate_action_planner_request(payload: object) -> None:
     try:
         validate_against_schema(ACTION_PLANNER_REQUEST_SCHEMA, payload)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - narrowed by caller tests
         raise LLMPlannerValidationError(str(exc)) from exc
 
 
@@ -250,7 +242,6 @@ def _load_env_file() -> None:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
@@ -277,7 +268,7 @@ def _get_model(env_name: str, default: str) -> str:
 
 def _existing_entity_ids(canvas_state: dict) -> List[str]:
     ids = []
-    for collection_name in ("objects", "frames", "connectors"):
+    for collection_name in ("objects", "connectors"):
         ids.extend(entity["id"] for entity in canvas_state[collection_name])
     return sorted(ids)
 
@@ -285,23 +276,17 @@ def _existing_entity_ids(canvas_state: dict) -> List[str]:
 def _next_available_id(existing_ids: set, prefix: str, width: int = 5) -> List[str]:
     pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
     highest_index = 0
-
     for entity_id in existing_ids:
         match = pattern.match(entity_id)
         if match:
             highest_index = max(highest_index, int(match.group(1)))
-
-    return [
-        f"{prefix}-{highest_index + offset}"
-        for offset in range(1, width + 1)
-    ]
+    return [f"{prefix}-{highest_index + offset}" for offset in range(1, width + 1)]
 
 
 def suggest_available_ids(canvas_state: dict) -> dict:
     existing_ids = set(_existing_entity_ids(canvas_state))
     return {
         "objects": _next_available_id(existing_ids, "node"),
-        "frames": _next_available_id(existing_ids, "frame"),
         "connectors": _next_available_id(existing_ids, "edge"),
     }
 
@@ -317,7 +302,6 @@ def empty_reference_resolution() -> dict:
 def _normalize_kind_term(term: Optional[str]) -> str:
     if not term:
         return ""
-
     normalized = term.lower().replace("-", " ")
     normalized = re.sub(r"\s+", " ", normalized).strip()
     singular_map = {
@@ -327,10 +311,6 @@ def _normalize_kind_term(term: Optional[str]) -> str:
         "cards": "card",
         "labels": "label",
         "text labels": "text label",
-        "frames": "frame",
-        "groups": "group",
-        "boxes": "box",
-        "lanes": "lane",
         "connectors": "connector",
         "arrows": "arrow",
         "edges": "edge",
@@ -340,8 +320,6 @@ def _normalize_kind_term(term: Optional[str]) -> str:
 
 def _scope_from_kind_term(term: Optional[str]) -> str:
     normalized = _normalize_kind_term(term)
-    if normalized in ("frame", "group", "box", "lane"):
-        return "frames"
     if normalized in ("connector", "arrow", "edge"):
         return "connectors"
     if normalized in ("label", "text label"):
@@ -351,29 +329,22 @@ def _scope_from_kind_term(term: Optional[str]) -> str:
 
 def _is_plural_reference(term: Optional[str], surface_text: str) -> bool:
     normalized = (term or "").lower().strip()
-    return (
-        surface_text.lower() == "current selection"
-        or normalized.endswith("s")
-    )
+    return surface_text.lower() == "current selection" or normalized.endswith("s")
 
 
 def _entity_content_text(entity: dict, collection_name: str) -> str:
     if collection_name == "objects":
         return entity.get("content", {}).get("text", "")
-    if collection_name == "frames":
-        return entity.get("content", {}).get("title", "")
     return entity.get("content", {}).get("label", "")
 
 
 def _connector_center(geometry: Optional[dict]) -> Optional[dict]:
     if not isinstance(geometry, dict):
         return None
-
     source_point = geometry.get("sourcePoint")
     target_point = geometry.get("targetPoint")
     if not isinstance(source_point, dict) or not isinstance(target_point, dict):
         return None
-
     return {
         "x": (source_point["x"] + target_point["x"]) / 2,
         "y": (source_point["y"] + target_point["y"]) / 2,
@@ -382,8 +353,7 @@ def _connector_center(geometry: Optional[dict]) -> Optional[dict]:
 
 def _iter_resolvable_entities(canvas_state: dict) -> List[dict]:
     entities = []
-
-    for collection_name in ("objects", "frames", "connectors"):
+    for collection_name in ("objects", "connectors"):
         for entity in canvas_state[collection_name]:
             geometry = entity.get("geometry")
             center = None
@@ -394,7 +364,6 @@ def _iter_resolvable_entities(canvas_state: dict) -> List[dict]:
                     "x": geometry["x"] + geometry["w"] / 2,
                     "y": geometry["y"] + geometry["h"] / 2,
                 }
-
             entities.append(
                 {
                     "id": entity["id"],
@@ -405,13 +374,10 @@ def _iter_resolvable_entities(canvas_state: dict) -> List[dict]:
                     "contentText": _entity_content_text(entity, collection_name),
                 }
             )
-
     return entities
 
 
 def _entities_for_scope(entities: List[dict], scope: str) -> List[dict]:
-    if scope == "frames":
-        return [entity for entity in entities if entity["collection"] == "frames"]
     if scope == "connectors":
         return [entity for entity in entities if entity["collection"] == "connectors"]
     if scope == "text-labels":
@@ -444,7 +410,6 @@ def _match_keyword_entities(
     keywords = _keyword_tokens(raw_keywords)
     if not keywords:
         return []
-
     matches = []
     for entity in _entities_for_scope(entities, scope):
         haystack = entity["contentText"].lower()
@@ -502,7 +467,7 @@ def _sort_entities_by_direction(entities: List[dict], direction: str) -> List[di
         return sorted(
             entities,
             key=lambda entity: (
-                entity["geometry"]["y"],
+                entity["geometry"]["y"] if entity["geometry"] else 0,
                 entity["center"]["x"] if entity["center"] else 0,
                 entity["id"],
             ),
@@ -523,10 +488,6 @@ def _selection_reference_candidates(
     scope: str,
 ) -> List[dict]:
     selected_entities = _entities_by_ids(entities, canvas_state["selection"])
-    if scope == "objects":
-        return [entity for entity in selected_entities if entity["collection"] == "objects"]
-    if scope == "frames":
-        return [entity for entity in selected_entities if entity["collection"] == "frames"]
     if scope == "connectors":
         return [entity for entity in selected_entities if entity["collection"] == "connectors"]
     if scope == "text-labels":
@@ -535,13 +496,12 @@ def _selection_reference_candidates(
             for entity in selected_entities
             if entity["collection"] == "objects" and entity["type"] == "text-label"
         ]
-    return selected_entities
+    if scope == "selection":
+        return selected_entities
+    return [entity for entity in selected_entities if entity["collection"] == "objects"]
 
 
-def _selection_centroid(
-    canvas_state: dict,
-    entities: List[dict],
-) -> Optional[dict]:
+def _selection_centroid(canvas_state: dict, entities: List[dict]) -> Optional[dict]:
     selected_entities = [
         entity
         for entity in _entities_by_ids(entities, canvas_state["selection"])
@@ -549,7 +509,6 @@ def _selection_centroid(
     ]
     if not selected_entities:
         return None
-
     count = len(selected_entities)
     return {
         "x": sum(entity["center"]["x"] for entity in selected_entities) / count,
@@ -570,13 +529,8 @@ def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
             scope = _scope_from_kind_term(match.group("kind"))
             plural_reference = _is_plural_reference(match.group("kind"), surface_text)
 
-        candidate_entities = _selection_reference_candidates(
-            canvas_state,
-            entities,
-            scope,
-        )
+        candidate_entities = _selection_reference_candidates(canvas_state, entities, scope)
         candidate_ids = [entity["id"] for entity in candidate_entities]
-
         if not candidate_ids:
             resolution_log.append(
                 _reference_record(
@@ -617,7 +571,6 @@ def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
             match.group("keywords"),
         )
         candidate_ids = [entity["id"] for entity in candidate_entities]
-
         if not candidate_ids:
             resolution_log.append(
                 _reference_record(
@@ -654,9 +607,12 @@ def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
     ):
         for match in pattern.finditer(subgoal):
             surface_text = match.group(0)
-            scope = _scope_from_kind_term(match.group("kind")) if match.groupdict().get("kind") else "objects"
+            scope = (
+                _scope_from_kind_term(match.group("kind"))
+                if match.groupdict().get("kind")
+                else "objects"
+            )
             candidate_entities = _entities_for_scope(entities, scope)
-
             if not candidate_entities:
                 resolution_log.append(
                     _reference_record(
@@ -693,14 +649,13 @@ def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
         anchor_ids = []
         anchor_source = None
         anchor_point = None
-
         for previous_reference in reversed(resolution_log):
             if previous_reference["status"] == "resolved" and len(previous_reference["candidateIds"]) == 1:
                 anchor_ids = previous_reference["candidateIds"]
                 anchor_source = "prior-resolved-reference"
-                anchor_entity = _entities_by_ids(entities, anchor_ids)
-                if anchor_entity and anchor_entity[0]["center"] is not None:
-                    anchor_point = anchor_entity[0]["center"]
+                anchor_entities = _entities_by_ids(entities, anchor_ids)
+                if anchor_entities and anchor_entities[0]["center"] is not None:
+                    anchor_point = anchor_entities[0]["center"]
                     break
 
         if anchor_point is None:
@@ -760,130 +715,82 @@ def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
                 candidate_ids=[nearest_entity["id"]],
                 status="resolved",
                 entity_scope=scope,
-                reason="Resolved by nearest-neighbor search using Euclidean distance.",
+                reason="Resolved deterministically by Euclidean distance.",
                 anchor_ids=anchor_ids,
                 anchor_source=anchor_source,
             )
         )
 
+    resolution = empty_reference_resolution()
+    for entry in resolution_log:
+        if entry["status"] == "resolved":
+            resolution["resolvedReferences"].append(entry)
+        elif entry["status"] == "ambiguous":
+            resolution["ambiguousReferences"].append(entry)
+        else:
+            resolution["unresolvedReferences"].append(entry)
+    return resolution
+
+
+def _compact_canvas_context(canvas_state: dict) -> dict:
     return {
-        "resolvedReferences": [
-            record for record in resolution_log if record["status"] == "resolved"
-        ],
-        "ambiguousReferences": [
-            record for record in resolution_log if record["status"] == "ambiguous"
-        ],
-        "unresolvedReferences": [
-            record for record in resolution_log if record["status"] == "unresolved"
-        ],
+        "objects": canvas_state["objects"],
+        "connectors": canvas_state["connectors"],
+        "viewport": canvas_state["viewport"],
+        "selection": canvas_state["selection"],
     }
-
-
-def _format_action_catalog_for_prompt() -> str:
-    lines = []
-    for action in get_action_catalog():
-        optional_fields = ", ".join(action["optional_fields"]) or "none"
-        lines.append(
-            f"- {action['op']}: required [{', '.join(action['required_fields'])}], "
-            f"optional [{optional_fields}]"
-        )
-    return "\n".join(lines)
-
-
-def _canvas_context_for_prompt(canvas_state: dict) -> str:
-    existing_ids = _existing_entity_ids(canvas_state)
-    suggested_ids = suggest_available_ids(canvas_state)
-    return "\n".join(
-        [
-            f"CURRENT_EXISTING_IDS: {json.dumps(existing_ids)}",
-            f"CURRENT_SELECTION: {json.dumps(canvas_state['selection'])}",
-            f"AVAILABLE_NEW_OBJECT_IDS: {json.dumps(suggested_ids['objects'])}",
-            f"AVAILABLE_NEW_FRAME_IDS: {json.dumps(suggested_ids['frames'])}",
-            f"AVAILABLE_NEW_CONNECTOR_IDS: {json.dumps(suggested_ids['connectors'])}",
-            "CURRENT_CANVAS_STATE_JSON:",
-            json.dumps(canvas_state, indent=2, sort_keys=True),
-        ]
-    )
-
-
-def _reference_context_for_prompt(reference_resolution: dict) -> str:
-    return "\n".join(
-        [
-            "RESOLVED_REFERENCES_JSON:",
-            json.dumps(
-                reference_resolution.get("resolvedReferences", []),
-                indent=2,
-                sort_keys=True,
-            ),
-            "AMBIGUOUS_REFERENCES_JSON:",
-            json.dumps(
-                reference_resolution.get("ambiguousReferences", []),
-                indent=2,
-                sort_keys=True,
-            ),
-            "UNRESOLVED_REFERENCES_JSON:",
-            json.dumps(
-                reference_resolution.get("unresolvedReferences", []),
-                indent=2,
-                sort_keys=True,
-            ),
-        ]
-    )
 
 
 def build_subgoal_system_prompt(canvas_state: dict) -> str:
     return "\n".join(
         [
-            "You are planner stage 1 for a whiteboard assistant.",
+            "You decompose a whiteboard command into a short ordered list of subgoals.",
             "Prompt 1 returns subgoals only.",
-            "Return only JSON that matches the provided schema.",
-            "Do not return atomic actions.",
-            "Do not return prose, markdown, commentary, or extra keys.",
-            "Allowed action set:",
-            _format_action_catalog_for_prompt(),
-            "Hard rules:",
-            "- Never invent nonexistent objects, frames, connectors, or IDs.",
-            "- If you mention any object ID, frame ID, or connector ID, it must be a valid ID from the current canvas state.",
-            "- Do not mention future IDs or hidden objects.",
-            "- Decompose the user request into short executable subgoals that could later be implemented with only the allowed action set.",
-            "- Respect the current canvas selection and existing scene graph as the source of truth.",
-            "",
-            _canvas_context_for_prompt(canvas_state),
+            "Allowed action set: Create, Select, Move, Resize, Connect, Annotate, Delete.",
+            "Do not emit atomic actions, explanations, markdown, or extra keys.",
+            "Never invent nonexistent objects, connectors, or IDs.",
+            "If you mention existing entities conceptually, rely only on CURRENT_CANVAS_STATE_JSON.",
+            "Selection is explicit in the canvas state and should guide references like 'these notes'.",
+            "CURRENT_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(canvas_state), indent=2, sort_keys=True),
         ]
     )
 
 
-def build_subgoal_user_prompt(user_prompt: str) -> str:
+def build_subgoal_user_prompt(prompt: str) -> str:
     return "\n".join(
         [
             "Decompose this whiteboard instruction into subgoals:",
-            user_prompt,
+            prompt,
         ]
     )
 
 
 def build_action_system_prompt(canvas_state: dict) -> str:
+    available_ids = suggest_available_ids(canvas_state)
     return "\n".join(
         [
-            "You are planner stage 2 for a whiteboard assistant.",
+            "You convert one whiteboard subgoal into executable atomic actions.",
             "Prompt 2 returns atomic actions only.",
-            "Return only JSON that matches the provided schema.",
-            "Do not return subgoals, prose, markdown, commentary, or extra keys.",
-            "Allowed action set:",
-            _format_action_catalog_for_prompt(),
-            "Hard rules:",
-            "- Emit actions only from the allowed action set.",
-            "- Never invent nonexistent objects, frames, connectors, or IDs.",
-            "- Every reference to an existing object, frame, or connector must use a valid ID from the current canvas state.",
-            "- You may introduce a new ID only for Create.id or Connect.id, and it must be unused.",
-            "- Prefer the provided available new IDs when creating objects, frames, or connectors.",
-            "- A deterministic reference resolver runs before you. Treat its resolved candidate IDs as grounding hints and do not override them with invented grounding.",
-            "- If a reference is ambiguous, stay within the listed candidate IDs. Do not fabricate a different existing object.",
-            "- For GroupIntoFrame, use an existing frame only if every target object fits inside that frame. If it does not fit, create a new frame with an unused frame_id instead of forcing the existing one.",
-            "- source, target, targets, parent_frame_id, and frame_id must refer to IDs that exist in the current canvas or are created earlier in the same action list.",
-            "- Keep the action list minimal and valid against the current canvas state.",
-            "",
-            _canvas_context_for_prompt(canvas_state),
+            "Emit actions only from the allowed action set.",
+            "Allowed action set: Create, Select, Move, Resize, Connect, Annotate, Delete.",
+            "Never invent nonexistent objects, connectors, or IDs.",
+            "Every reference to an existing entity must use a valid ID from the current canvas state.",
+            "Create may only create object_type 'sticky-note' or 'text-label'.",
+            "Use AVAILABLE_NEW_IDS_JSON for any new object or connector ID.",
+            "Every targets array must be non-empty.",
+            "Connect actions must include both source and target.",
+            "Move, Resize, and Create must keep object geometry inside CANVAS_BOUNDS.",
+            "Do not include fields that are irrelevant for the chosen op.",
+            "Do not reference an entity after deleting it in the same response.",
+            "CURRENT_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(canvas_state), indent=2, sort_keys=True),
+            "EXISTING_ENTITY_IDS_JSON:",
+            json.dumps(_existing_entity_ids(canvas_state), indent=2),
+            "AVAILABLE_NEW_IDS_JSON:",
+            json.dumps(available_ids, indent=2, sort_keys=True),
+            "CANVAS_BOUNDS:",
+            json.dumps(CANVAS_BOUNDS, indent=2, sort_keys=True),
         ]
     )
 
@@ -891,103 +798,144 @@ def build_action_system_prompt(canvas_state: dict) -> str:
 def build_action_user_prompt(
     subgoal: str,
     reference_resolution: dict,
-    *,
-    previous_actions: Optional[List[dict]] = None,
-    validation_error: Optional[str] = None,
+    canvas_state: dict,
 ) -> str:
-    prompt_lines = [
-        "Convert this single subgoal into atomic whiteboard actions:",
-        subgoal,
-        "",
-        "Use the deterministic grounding output below when resolving references:",
-        _reference_context_for_prompt(reference_resolution),
-    ]
-
-    if validation_error:
-        prompt_lines.extend(
-            [
-                "",
-                "The previous candidate action plan was invalid for the current canvas state.",
-                "Return a corrected atomic action list only.",
-                f"VALIDATION_ERROR: {validation_error}",
-            ]
-        )
-        repair_hint = _build_validation_repair_hint(validation_error)
-        if repair_hint:
-            prompt_lines.append(f"REPAIR_HINT: {repair_hint}")
-
-    if previous_actions:
-        prompt_lines.extend(
-            [
-                "PREVIOUS_INVALID_ACTIONS_JSON:",
-                json.dumps(previous_actions, indent=2, sort_keys=True),
-            ]
-        )
-
-    return "\n".join(prompt_lines)
-
-
-def _extract_response_text(response_payload: dict) -> str:
-    if response_payload.get("status") == "incomplete":
-        details = response_payload.get("incomplete_details") or {}
-        reason = details.get("reason", "unknown")
-        raise LLMPlannerUpstreamError(
-            f"OpenAI response was incomplete: {reason}."
-        )
-
-    for output_item in response_payload.get("output", []):
-        for content_item in output_item.get("content", []):
-            content_type = content_item.get("type")
-            if content_type == "refusal":
-                raise LLMPlannerUpstreamError(
-                    "OpenAI refused to answer the request."
-                )
-            if content_type == "output_text":
-                text = content_item.get("text", "")
-                if text:
-                    return text
-
-    output_text = response_payload.get("output_text")
-    if isinstance(output_text, str) and output_text:
-        return output_text
-
-    raise LLMPlannerUpstreamError(
-        "OpenAI response did not contain structured text output."
+    return "\n".join(
+        [
+            "Convert this single subgoal into atomic whiteboard actions:",
+            f"SUBGOAL: {subgoal}",
+            "RESOLVED_REFERENCES_JSON:",
+            json.dumps(reference_resolution["resolvedReferences"], indent=2, sort_keys=True),
+            "AMBIGUOUS_REFERENCES_JSON:",
+            json.dumps(reference_resolution["ambiguousReferences"], indent=2, sort_keys=True),
+            "UNRESOLVED_REFERENCES_JSON:",
+            json.dumps(reference_resolution["unresolvedReferences"], indent=2, sort_keys=True),
+            "CURRENT_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(canvas_state), indent=2, sort_keys=True),
+        ]
     )
 
 
-def _call_openai_json(
-    *,
+def _repair_hints_for_error(validation_error: str) -> List[str]:
+    hints = []
+    lowered = validation_error.lower()
+    if "outside canvas bounds" in lowered:
+        hints.append(
+            "Move, Resize, and Create actions must keep object geometry inside CANVAS_BOUNDS."
+        )
+    if ".target is required" in lowered or ".source is required" in lowered:
+        hints.append(
+            "Connect actions must include both source and target."
+        )
+    if "does not exist" in lowered or "not valid for this action" in lowered:
+        hints.append(
+            "Use only existing valid object or connector IDs from CURRENT_CANVAS_STATE_JSON, or a suggested unused ID for Create and Connect."
+        )
+    if "at least 1 item" in lowered or "targets" in lowered and "required" in lowered:
+        hints.append("Every targets array must be non-empty.")
+    if "unsupported field" in lowered:
+        hints.append("Do not include fields that are not allowed for the selected op.")
+    return hints or ["Return only executable actions for the current scene graph."]
+
+
+def build_action_repair_prompt(
+    subgoal: str,
+    reference_resolution: dict,
+    canvas_state: dict,
+    previous_actions: List[dict],
+    validation_error: str,
+    failure_log: List[dict],
+) -> str:
+    hint_lines = [
+        f"REPAIR_HINT: {hint}" for hint in _repair_hints_for_error(validation_error)
+    ]
+    return "\n".join(
+        [
+            "Repair the previous atomic whiteboard action plan.",
+            f"SUBGOAL: {subgoal}",
+            "RESOLVED_REFERENCES_JSON:",
+            json.dumps(reference_resolution["resolvedReferences"], indent=2, sort_keys=True),
+            "AMBIGUOUS_REFERENCES_JSON:",
+            json.dumps(reference_resolution["ambiguousReferences"], indent=2, sort_keys=True),
+            "UNRESOLVED_REFERENCES_JSON:",
+            json.dumps(reference_resolution["unresolvedReferences"], indent=2, sort_keys=True),
+            "CURRENT_CANVAS_CONTEXT_FOR_REPAIR:",
+            "CURRENT_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(canvas_state), indent=2, sort_keys=True),
+            "PREVIOUS_INVALID_ACTIONS_JSON:",
+            json.dumps(previous_actions, indent=2, sort_keys=True),
+            "VALIDATION_ERROR:",
+            validation_error,
+            "FAILURE_LOG_JSON:",
+            json.dumps(failure_log, indent=2, sort_keys=True),
+            *hint_lines,
+        ]
+    )
+
+
+def _request_payload_for_structured_output(
     model: str,
-    schema_name: str,
-    response_schema: dict,
     system_prompt: str,
     user_prompt: str,
-    max_output_tokens: int,
+    schema_name: str,
+    schema: dict,
 ) -> dict:
-    api_key = _get_required_env("OPENAI_API_KEY")
-    api_url = os.environ.get("OPENAI_RESPONSES_URL", "https://api.openai.com/v1/responses")
-
-    request_body = {
+    return {
         "model": model,
         "input": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": system_prompt}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_prompt}],
+            },
         ],
-        "max_output_tokens": max_output_tokens,
         "text": {
             "format": {
                 "type": "json_schema",
                 "name": schema_name,
-                "schema": response_schema,
+                "schema": schema,
                 "strict": True,
             }
         },
     }
 
+
+def _extract_response_text(payload: dict) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    for output in payload.get("output", []):
+        for content in output.get("content", []):
+            text_value = content.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                return text_value
+    raise LLMPlannerUpstreamError("OpenAI response did not include structured JSON text.")
+
+
+def _call_openai_structured_json(
+    *,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    schema_name: str,
+    schema: dict,
+) -> dict:
+    api_key = _get_required_env("OPENAI_API_KEY")
+    payload = _request_payload_for_structured_output(
+        model,
+        system_prompt,
+        user_prompt,
+        schema_name,
+        schema,
+    )
+    request_body = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
-        api_url,
-        data=json.dumps(request_body).encode("utf-8"),
+        "https://api.openai.com/v1/responses",
+        data=request_body,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -996,25 +944,15 @@ def _call_openai_json(
     )
 
     try:
-        with request.urlopen(http_request, timeout=90) as response:
-            response_payload = json.loads(
-                response.read().decode("utf-8")
-            )
+        with request.urlopen(http_request, timeout=60) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
-        payload = exc.read().decode("utf-8", errors="replace")
+        body = exc.read().decode("utf-8", errors="replace")
         try:
-            parsed = json.loads(payload)
+            error_payload = json.loads(body)
+            message = error_payload.get("error", {}).get("message", body)
         except json.JSONDecodeError:
-            parsed = None
-
-        message = payload
-        if isinstance(parsed, dict):
-            message = (
-                parsed.get("error", {}).get("message")
-                or parsed.get("message")
-                or payload
-            )
-
+            message = body or str(exc)
         raise LLMPlannerUpstreamError(
             f"OpenAI API request failed with status {exc.code}: {message}"
         ) from exc
@@ -1023,11 +961,12 @@ def _call_openai_json(
             f"OpenAI API request failed: {exc.reason}"
         ) from exc
 
+    raw_text = _extract_response_text(response_payload)
     try:
-        return json.loads(_extract_response_text(response_payload))
+        return json.loads(raw_text)
     except json.JSONDecodeError as exc:
         raise LLMPlannerUpstreamError(
-            "OpenAI returned invalid JSON."
+            f"OpenAI response was not valid JSON: {exc}"
         ) from exc
 
 
@@ -1036,183 +975,143 @@ def validate_subgoal_response(payload: object) -> dict:
         validate_against_schema(SUBGOAL_RESPONSE_SCHEMA, payload)
     except Exception as exc:
         raise LLMPlannerUpstreamError(
-            f"Subgoal response did not match the schema: {exc}"
+            f"Subgoal response was invalid: {exc}"
         ) from exc
-    for entry in payload["subgoals"]:
-        if not entry["subgoal"].strip():
+
+    subgoals = []
+    for item in payload["subgoals"]:
+        subgoal = item["subgoal"].strip()
+        if not subgoal:
             raise LLMPlannerUpstreamError(
-                "Subgoal response contained an empty subgoal."
+                "Subgoal response was invalid: subgoal text must be non-empty."
             )
-    return payload
+        subgoals.append({"subgoal": subgoal})
+    return {"subgoals": subgoals}
 
 
-def _current_entity_collections(canvas_state: dict) -> Dict[str, str]:
-    collections = {}
-    for collection_name in ("objects", "frames", "connectors"):
-        for entity in canvas_state[collection_name]:
-            collections[entity["id"]] = collection_name
-    return collections
+def _canonicalize_action_payload(action: dict) -> dict:
+    canonical = deepcopy(action)
+    if "sourceHandle" in canonical and "source_handle" not in canonical:
+        canonical["source_handle"] = canonical.pop("sourceHandle")
+    if "targetHandle" in canonical and "target_handle" not in canonical:
+        canonical["target_handle"] = canonical.pop("targetHandle")
+
+    op = canonical.get("op")
+    if not isinstance(op, str) or op not in ACTION_SCHEMAS:
+        return canonical
+
+    allowed_fields = set(ACTION_SCHEMAS[op]["properties"].keys())
+    canonical = {
+        key: value
+        for key, value in canonical.items()
+        if key in allowed_fields and value is not None
+    }
+    return canonical
 
 
-def _collection_for_created_action(action: dict) -> Optional[str]:
-    if action.get("op") == "Create":
-        if action.get("object_type") == "frame":
-            return "frames"
-        return "objects"
-    if action.get("op") == "Connect":
-        return "connectors"
-    return None
+def _normalize_action_output_payload(payload: object) -> object:
+    if not isinstance(payload, dict) or not isinstance(payload.get("actions"), list):
+        return payload
 
-
-def _normalize_llm_action_response_payload(payload: dict) -> dict:
-    action_properties = ACTION_RESPONSE_SCHEMA["properties"]["actions"]["items"]["properties"]
     normalized_actions = []
+    for action in payload["actions"]:
+        if not isinstance(action, dict):
+            normalized_actions.append(action)
+            continue
 
-    for raw_action in payload.get("actions", []):
-        normalized_action = {
-            key: raw_action.get(key)
-            for key in action_properties.keys()
-        }
+        normalized_action = {key: None for key in ACTION_OUTPUT_ITEM_KEYS}
+        normalized_action.update(action)
         normalized_actions.append(normalized_action)
 
-    return {"actions": normalized_actions}
-
-
-def _canonicalize_action_payload(raw_payload: dict) -> dict:
-    actions = []
-    for raw_action in raw_payload["actions"]:
-        canonical_action = {
-            key: value
-            for key, value in raw_action.items()
-            if value is not None
-        }
-        actions.append(canonical_action)
-    return {"actions": actions}
-
-
-def _deterministically_repair_actions(
-    execution_request: dict,
-    canvas_state: dict,
-) -> dict:
-    repaired_request = deepcopy(execution_request)
-    known_entity_collections = _current_entity_collections(canvas_state)
-
-    for action in repaired_request["actions"]:
-        if action["op"] == "GroupIntoFrame":
-            filtered_targets = [
-                entity_id
-                for entity_id in action.get("targets", [])
-                if known_entity_collections.get(entity_id) == "objects"
-            ]
-            deduped_targets = list(dict.fromkeys(filtered_targets))
-            if deduped_targets:
-                action["targets"] = deduped_targets
-
-        created_collection = _collection_for_created_action(action)
-        created_id = action.get("id")
-        if created_collection and created_id:
-            known_entity_collections[created_id] = created_collection
-
-    return repaired_request
-
-
-def _build_validation_repair_hint(validation_error: str) -> Optional[str]:
-    if "GroupIntoFrame" in validation_error and "is not valid for this action" in validation_error:
-        return (
-            "For GroupIntoFrame, targets must contain object ids only. "
-            "Do not include frame ids or connector ids in targets. "
-            "Put the destination frame only in frame_id."
-        )
-    if "GroupIntoFrame" in validation_error and "too large for frame" in validation_error:
-        return (
-            "Do not group into an existing frame that cannot contain every target object. "
-            "Use a new unused frame_id instead."
-        )
-    return None
+    return {
+        **payload,
+        "actions": normalized_actions,
+    }
 
 
 def validate_action_response(payload: object, canvas_state: dict) -> dict:
-    normalized_payload = _normalize_llm_action_response_payload(payload)
+    normalized_payload = _normalize_action_output_payload(payload)
     try:
         validate_against_schema(ACTION_RESPONSE_SCHEMA, normalized_payload)
     except Exception as exc:
         raise LLMPlannerUpstreamError(
-            f"Atomic action response did not match the schema: {exc}"
+            f"Atomic action response was invalid: {exc}"
         ) from exc
 
-    execution_request = _canonicalize_action_payload(normalized_payload)
-    execution_request = _deterministically_repair_actions(
-        execution_request,
-        canvas_state,
-    )
+    canonical_actions = [
+        _canonicalize_action_payload(action)
+        for action in normalized_payload["actions"]
+    ]
+
     try:
-        validate_action_request(execution_request)
-        execute_action_batch(canvas_state, execution_request["actions"])
-    except Exception as exc:
+        execute_action_batch(deepcopy(canvas_state), canonical_actions)
+    except CanvasActionError as exc:
         raise LLMPlannerUpstreamError(
             f"Atomic action response was invalid for the current canvas state: {exc}"
         ) from exc
 
-    return execution_request
+    return {"actions": canonical_actions}
 
 
-def plan_subgoals_with_llm(user_prompt: str, canvas_state: dict) -> dict:
-    validated_canvas_state = resolve_canvas_state(canvas_state)
-    response_payload = _call_openai_json(
+def plan_subgoals_with_llm(prompt: str, canvas_state: dict) -> dict:
+    system_prompt = build_subgoal_system_prompt(canvas_state)
+    user_prompt = build_subgoal_user_prompt(prompt)
+    payload = _call_openai_structured_json(
         model=_get_model("OPENAI_SUBGOAL_MODEL", DEFAULT_SUBGOAL_MODEL),
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
         schema_name="whiteboard_subgoals",
-        response_schema=SUBGOAL_RESPONSE_SCHEMA,
-        system_prompt=build_subgoal_system_prompt(validated_canvas_state),
-        user_prompt=build_subgoal_user_prompt(user_prompt),
-        max_output_tokens=500,
+        schema=SUBGOAL_RESPONSE_SCHEMA,
     )
-    return validate_subgoal_response(response_payload)
+    return validate_subgoal_response(payload)
 
 
 def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
-    validated_canvas_state = resolve_canvas_state(canvas_state)
-    reference_resolution = resolve_action_references(
-        subgoal,
-        validated_canvas_state,
-    )
-    system_prompt = build_action_system_prompt(validated_canvas_state)
-    current_user_prompt = build_action_user_prompt(
+    reference_resolution = resolve_action_references(subgoal, canvas_state)
+    system_prompt = build_action_system_prompt(canvas_state)
+    user_prompt = build_action_user_prompt(
         subgoal,
         reference_resolution,
+        canvas_state,
     )
-    last_validation_error = None
+    failure_log = []
+    previous_actions = []
+    model = _get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL)
 
-    for attempt in range(ACTION_PLANNING_MAX_ATTEMPTS):
-        response_payload = _call_openai_json(
-            model=_get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL),
-            schema_name="whiteboard_actions",
-            response_schema=ACTION_RESPONSE_SCHEMA,
+    for attempt in range(1, ACTION_PLANNING_MAX_ATTEMPTS + 1):
+        payload = _call_openai_structured_json(
+            model=model,
             system_prompt=system_prompt,
-            user_prompt=current_user_prompt,
-            max_output_tokens=1400,
+            user_prompt=user_prompt,
+            schema_name="whiteboard_actions",
+            schema=ACTION_RESPONSE_SCHEMA,
         )
+        previous_actions = payload.get("actions", [])
 
         try:
-            validated_response = validate_action_response(
-                response_payload,
-                validated_canvas_state,
-            )
-            validated_response["referenceResolution"] = reference_resolution
-            if last_validation_error is not None:
-                validated_response["repairAttempted"] = True
-            return validated_response
+            validated = validate_action_response(payload, canvas_state)
+            return {
+                "actions": validated["actions"],
+                "referenceResolution": reference_resolution,
+                "failureLog": failure_log,
+            }
         except LLMPlannerUpstreamError as exc:
-            last_validation_error = str(exc)
-            if attempt == ACTION_PLANNING_MAX_ATTEMPTS - 1:
+            failure_log.append(
+                {
+                    "attempt": attempt,
+                    "error": str(exc),
+                    "actions": deepcopy(previous_actions),
+                }
+            )
+            if attempt >= ACTION_PLANNING_MAX_ATTEMPTS:
                 raise
-
-            current_user_prompt = build_action_user_prompt(
+            user_prompt = build_action_repair_prompt(
                 subgoal,
                 reference_resolution,
-                previous_actions=response_payload.get("actions", []),
-                validation_error=last_validation_error,
+                canvas_state,
+                previous_actions=previous_actions,
+                validation_error=str(exc),
+                failure_log=failure_log,
             )
 
-    raise LLMPlannerUpstreamError(
-        "Atomic action planning failed after all repair attempts."
-    )
+    raise LLMPlannerUpstreamError("Action planning failed without a result.")

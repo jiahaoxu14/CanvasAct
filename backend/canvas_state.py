@@ -1,10 +1,12 @@
 from typing import Optional
 
 
+OBJECT_TYPES = {"sticky-note", "text-label"}
+
+
 def empty_canvas_state() -> dict:
     return {
         "objects": [],
-        "frames": [],
         "connectors": [],
         "viewport": {"x": 0, "y": 0, "zoom": 1.0},
         "selection": [],
@@ -41,7 +43,7 @@ def validate_canvas_state(payload: object) -> Optional[str]:
     if not isinstance(payload, dict):
         return "Canvas state must be a JSON object."
 
-    for key in ("objects", "frames", "connectors", "selection"):
+    for key in ("objects", "connectors", "selection"):
         if not isinstance(payload.get(key), list):
             return f"'{key}' must be a list."
 
@@ -58,8 +60,11 @@ def validate_canvas_state(payload: object) -> Optional[str]:
             return f"'objects[{index}]' must be an object."
         if not isinstance(item.get("id"), str) or not item["id"]:
             return f"'objects[{index}].id' is required."
-        if not isinstance(item.get("type"), str) or not item["type"]:
-            return f"'objects[{index}].type' is required."
+        if item.get("type") not in OBJECT_TYPES:
+            return (
+                f"'objects[{index}].type' must be one of "
+                f"{sorted(OBJECT_TYPES)}."
+            )
         if not isinstance(item.get("content"), dict):
             return f"'objects[{index}].content' must be an object."
 
@@ -70,57 +75,32 @@ def validate_canvas_state(payload: object) -> Optional[str]:
         if geometry_error:
             return geometry_error
 
-        parent_frame_id = item.get("parentFrameId")
-        if parent_frame_id is not None and (
-            not isinstance(parent_frame_id, str) or not parent_frame_id
-        ):
-            return f"'objects[{index}].parentFrameId' must be a non-empty string when provided."
-
-    for index, item in enumerate(payload["frames"]):
-        if not isinstance(item, dict):
-            return f"'frames[{index}]' must be an object."
-        if not isinstance(item.get("id"), str) or not item["id"]:
-            return f"'frames[{index}].id' is required."
-        if not isinstance(item.get("type"), str) or not item["type"]:
-            return f"'frames[{index}].type' is required."
-        if not isinstance(item.get("content"), dict):
-            return f"'frames[{index}].content' must be an object."
-
-        geometry_error = _validate_geometry(
-            item.get("geometry"),
-            f"frames[{index}].geometry",
-        )
-        if geometry_error:
-            return geometry_error
-
-        child_ids = item.get("childIds")
-        if child_ids is not None:
-            if not isinstance(child_ids, list):
-                return f"'frames[{index}].childIds' must be a list when provided."
-            for child_index, child_id in enumerate(child_ids):
-                if not isinstance(child_id, str) or not child_id:
-                    return (
-                        f"'frames[{index}].childIds[{child_index}]' must be a non-empty string."
-                    )
-
     for index, item in enumerate(payload["connectors"]):
         if not isinstance(item, dict):
             return f"'connectors[{index}]' must be an object."
         for key in ("id", "type", "source", "target"):
             if not isinstance(item.get(key), str) or not item[key]:
                 return f"'connectors[{index}].{key}' is required."
+        if item["type"] != "connector":
+            return f"'connectors[{index}].type' must be 'connector'."
         if not isinstance(item.get("content"), dict):
             return f"'connectors[{index}].content' must be an object."
 
         for key in ("sourceHandle", "targetHandle"):
             value = item.get(key)
             if value is not None and (not isinstance(value, str) or not value):
-                return f"'connectors[{index}].{key}' must be a non-empty string when provided."
+                return (
+                    f"'connectors[{index}].{key}' must be a non-empty string "
+                    "when provided."
+                )
 
         geometry = item.get("geometry")
         if geometry is not None:
             if not isinstance(geometry, dict):
-                return f"'connectors[{index}].geometry' must be an object when provided."
+                return (
+                    f"'connectors[{index}].geometry' must be an object "
+                    "when provided."
+                )
             for key in ("sourcePoint", "targetPoint"):
                 point_error = _validate_point(
                     geometry.get(key),
