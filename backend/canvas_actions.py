@@ -1,28 +1,22 @@
 import json
-import math
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from canvas_rules import DEFAULT_RULE_REGISTRY, RuleEffect, RuleRegistry, RuleViolationError
+from canvas_rules.helpers import (
+    CANVAS_BOUNDS,
+    HANDLE_VALUES,
+    LAYOUT_POLICY_VALUES,
+    canonical_selection,
+    compute_connector_geometry,
+    entity_ids,
+    find_entity,
+    geometry_fits_canvas,
+    node_ids,
+)
 from canvas_state import _is_number, validate_canvas_state
 
-CANVAS_BOUNDS = {
-    "left": -2000,
-    "top": -2000,
-    "right": 6000,
-    "bottom": 6000,
-}
-
-HANDLE_VALUES = ("left", "top", "right", "bottom")
-TEXT_LABEL_AUTO_SIZE = {
-    "min_width": 170,
-    "max_width": 460,
-    "min_height": 58,
-    "padding_x": 36,
-    "padding_y": 28,
-    "line_height": 28,
-    "char_width": 9.5,
-}
 ACTION_ORDER = (
     "Create",
     "Select",
@@ -75,6 +69,10 @@ ACTIONS_REQUEST_SCHEMA = {
         },
         "dry_run": BOOLEAN_SCHEMA,
         "canvasState": {"type": "object"},
+        "layoutPolicy": {
+            "type": "string",
+            "enum": list(LAYOUT_POLICY_VALUES),
+        },
     },
     "required": ["actions"],
     "additionalProperties": False,
@@ -169,7 +167,20 @@ ACTION_SCHEMAS = {
 
 
 class CanvasActionError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: Optional[str] = None,
+        error_rule: Optional[str] = None,
+        error_details: Optional[dict] = None,
+        repair_hint: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.error_code = error_code
+        self.error_rule = error_rule
+        self.error_details = dict(error_details or {})
+        self.repair_hint = repair_hint
 
 
 class CanvasActionSchemaError(CanvasActionError):
@@ -194,12 +205,27 @@ class ActionHandler:
     postcondition_checker: str
     undo_handler: str
     execute: Callable[[dict, dict], dict]
-    check_postcondition: Callable[[dict, dict, dict], None]
     undo: Callable[[dict, dict, dict], None]
 
 
 def _json_signature(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _schema_repair_hint(
+    *,
+    reason: str,
+    path: str,
+) -> Optional[str]:
+    if reason in {"required", "type"} and path == "$.delta":
+        return "Move actions must include delta as an object with numeric dx and dy."
+    if reason == "required" and path in {"$.source", "$.target"}:
+        return "Connect actions must include both source and target."
+    if reason == "min_items" and path == "$.targets":
+        return "Every targets array must be non-empty."
+    if reason == "unsupported_fields":
+        return "Do not include fields that are not allowed for the selected op."
+    return None
 
 
 def _schema_type_matches(expected_type: Any, value: Any) -> bool:
@@ -222,7 +248,11 @@ def _schema_type_matches(expected_type: Any, value: Any) -> bool:
 
 def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
     if "const" in schema and value != schema["const"]:
-        raise CanvasActionSchemaError(f"{path} must equal {schema['const']!r}.")
+        raise CanvasActionSchemaError(
+            f"{path} must equal {schema['const']!r}.",
+            error_code="schema_const_mismatch",
+            error_details={"path": path, "expected": schema["const"]},
+        )
 
     expected_type = schema.get("type")
     resolved_type = expected_type
@@ -237,43 +267,63 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
         )
 
     if expected_type and not _schema_type_matches(expected_type, value):
-        raise CanvasActionSchemaError(f"{path} must be of type '{expected_type}'.")
+        raise CanvasActionSchemaError(
+            f"{path} must be of type '{expected_type}'.",
+            error_code="schema_type_mismatch",
+            error_details={"path": path, "expectedType": expected_type},
+            repair_hint=_schema_repair_hint(reason="type", path=path),
+        )
 
     enum_values = schema.get("enum")
     if enum_values is not None and value not in enum_values:
-        raise CanvasActionSchemaError(f"{path} must be one of {enum_values}.")
+        raise CanvasActionSchemaError(
+            f"{path} must be one of {enum_values}.",
+            error_code="schema_enum_mismatch",
+            error_details={"path": path, "allowedValues": enum_values},
+        )
 
     if resolved_type == "string":
         min_length = schema.get("minLength")
         if min_length is not None and len(value) < min_length:
             raise CanvasActionSchemaError(
-                f"{path} must have at least {min_length} characters."
+                f"{path} must have at least {min_length} characters.",
+                error_code="schema_string_too_short",
+                error_details={"path": path, "minLength": min_length},
             )
 
     if resolved_type == "number":
         minimum = schema.get("minimum")
         if minimum is not None and value < minimum:
             raise CanvasActionSchemaError(
-                f"{path} must be greater than or equal to {minimum}."
+                f"{path} must be greater than or equal to {minimum}.",
+                error_code="schema_number_below_minimum",
+                error_details={"path": path, "minimum": minimum},
             )
         exclusive_minimum = schema.get("exclusiveMinimum")
         if exclusive_minimum is not None and value <= exclusive_minimum:
             raise CanvasActionSchemaError(
-                f"{path} must be greater than {exclusive_minimum}."
+                f"{path} must be greater than {exclusive_minimum}.",
+                error_code="schema_number_below_exclusive_minimum",
+                error_details={"path": path, "exclusiveMinimum": exclusive_minimum},
             )
 
     if resolved_type == "array":
         min_items = schema.get("minItems")
         if min_items is not None and len(value) < min_items:
             raise CanvasActionSchemaError(
-                f"{path} must contain at least {min_items} item(s)."
+                f"{path} must contain at least {min_items} item(s).",
+                error_code="schema_array_too_short",
+                error_details={"path": path, "minItems": min_items},
+                repair_hint=_schema_repair_hint(reason="min_items", path=path),
             )
 
         if schema.get("uniqueItems"):
             signatures = [_json_signature(item) for item in value]
             if len(signatures) != len(set(signatures)):
                 raise CanvasActionSchemaError(
-                    f"{path} must not contain duplicate items."
+                    f"{path} must not contain duplicate items.",
+                    error_code="schema_array_duplicate_items",
+                    error_details={"path": path},
                 )
 
         item_schema = schema.get("items")
@@ -285,7 +335,13 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
         required = schema.get("required", [])
         for key in required:
             if key not in value:
-                raise CanvasActionSchemaError(f"{path}.{key} is required.")
+                full_path = f"{path}.{key}"
+                raise CanvasActionSchemaError(
+                    f"{full_path} is required.",
+                    error_code="schema_required_field_missing",
+                    error_details={"path": full_path, "field": key},
+                    repair_hint=_schema_repair_hint(reason="required", path=full_path),
+                )
 
         properties = schema.get("properties", {})
         additional_properties = schema.get("additionalProperties", True)
@@ -293,7 +349,10 @@ def validate_against_schema(schema: dict, value: Any, path: str = "$") -> None:
             extra_keys = [key for key in value.keys() if key not in properties]
             if extra_keys:
                 raise CanvasActionSchemaError(
-                    f"{path} contains unsupported field(s): {', '.join(extra_keys)}."
+                    f"{path} contains unsupported field(s): {', '.join(extra_keys)}.",
+                    error_code="schema_unsupported_fields",
+                    error_details={"path": path, "fields": extra_keys},
+                    repair_hint=_schema_repair_hint(reason="unsupported_fields", path=path),
                 )
 
         for key, subschema in properties.items():
@@ -307,22 +366,40 @@ def validate_action_request(payload: object) -> None:
 
 def validate_action_payload(action: object) -> dict:
     if not isinstance(action, dict):
-        raise CanvasActionSchemaError("Each action must be a JSON object.")
+        raise CanvasActionSchemaError(
+            "Each action must be a JSON object.",
+            error_code="schema_action_not_object",
+        )
 
     op = action.get("op")
     if not isinstance(op, str) or op not in ACTION_SCHEMAS:
-        raise CanvasActionSchemaError(f"Unsupported action op {op!r}.")
+        raise CanvasActionSchemaError(
+            f"Unsupported action op {op!r}.",
+            error_code="schema_unsupported_action_op",
+            error_details={"op": op},
+        )
 
     validate_against_schema(ACTION_SCHEMAS[op], action)
     return action
 
 
-def _find_entity(state: dict, entity_id: str) -> Optional[Tuple[str, int, dict]]:
-    for collection_name in ("objects", "connectors"):
-        for index, entity in enumerate(state[collection_name]):
-            if entity["id"] == entity_id:
-                return collection_name, index, entity
-    return None
+def action_error_payload(
+    error: CanvasActionError,
+    *,
+    include_status: bool = False,
+) -> dict:
+    payload = {"message": str(error)}
+    if include_status:
+        payload["status"] = "error"
+    if error.error_code:
+        payload["errorCode"] = error.error_code
+    if error.error_rule:
+        payload["errorRule"] = error.error_rule
+    if error.error_details:
+        payload["errorDetails"] = deepcopy(error.error_details)
+    if error.repair_hint:
+        payload["repairHint"] = error.repair_hint
+    return payload
 
 
 def _require_entity(
@@ -330,148 +407,41 @@ def _require_entity(
     entity_id: str,
     allowed_collections: Optional[Tuple[str, ...]] = None,
 ) -> Tuple[str, int, dict]:
-    result = _find_entity(state, entity_id)
+    result = find_entity(state, entity_id)
     if result is None:
-        raise CanvasActionPreconditionError(f"Entity {entity_id!r} does not exist.")
+        raise CanvasActionPreconditionError(
+            f"Entity {entity_id!r} does not exist.",
+            error_code="invalid_entity_reference",
+            error_details={"entityId": entity_id},
+        )
 
     collection_name, index, entity = result
     if allowed_collections and collection_name not in allowed_collections:
         raise CanvasActionPreconditionError(
-            f"Entity {entity_id!r} is not valid for this action."
+            f"Entity {entity_id!r} is not valid for this action.",
+            error_code="invalid_entity_kind",
+            error_details={
+                "entityId": entity_id,
+                "allowedCollections": list(allowed_collections),
+            },
         )
 
     return collection_name, index, entity
 
 
-def _entity_ids(state: dict) -> set:
-    ids = set()
-    for collection_name in ("objects", "connectors"):
-        ids.update(entity["id"] for entity in state[collection_name])
-    return ids
-
-
-def _node_ids(state: dict) -> set:
-    return {entity["id"] for entity in state["objects"]}
-
-
-def _canonical_selection(state: dict) -> List[str]:
-    existing_ids = _entity_ids(state)
-    selection = []
-    seen = set()
-    for entity_id in state["selection"]:
-        if entity_id in existing_ids and entity_id not in seen:
-            selection.append(entity_id)
-            seen.add(entity_id)
-    return selection
-
-
-def _geometry_fits_canvas(geometry: dict) -> bool:
-    return (
-        geometry["x"] >= CANVAS_BOUNDS["left"]
-        and geometry["y"] >= CANVAS_BOUNDS["top"]
-        and geometry["x"] + geometry["w"] <= CANVAS_BOUNDS["right"]
-        and geometry["y"] + geometry["h"] <= CANVAS_BOUNDS["bottom"]
-    )
-
-
-def _require_geometry_within_canvas(geometry: dict, message: str) -> None:
-    if not _geometry_fits_canvas(geometry):
-        raise CanvasActionPreconditionError(message)
-
-
-def _fit_text_label_geometry(geometry: dict, text: Optional[str]) -> dict:
-    text_value = text if isinstance(text, str) else ""
-    paragraphs = text_value.split("\n") if text_value else [""]
-    longest_line_chars = max(max(len(paragraph), 1) for paragraph in paragraphs)
-
-    min_content_width = (
-        TEXT_LABEL_AUTO_SIZE["min_width"] - TEXT_LABEL_AUTO_SIZE["padding_x"]
-    )
-    max_content_width = (
-        TEXT_LABEL_AUTO_SIZE["max_width"] - TEXT_LABEL_AUTO_SIZE["padding_x"]
-    )
-    natural_content_width = math.ceil(
-        longest_line_chars * TEXT_LABEL_AUTO_SIZE["char_width"]
-    )
-    content_width = max(
-        min_content_width,
-        min(max_content_width, natural_content_width),
-    )
-    line_count = sum(
-        max(
-            1,
-            math.ceil(
-                max(len(paragraph), 1)
-                * TEXT_LABEL_AUTO_SIZE["char_width"]
-                / content_width
-            ),
-        )
-        for paragraph in paragraphs
-    )
-
-    return {
-        **deepcopy(geometry),
-        "w": content_width + TEXT_LABEL_AUTO_SIZE["padding_x"],
-        "h": max(
-            TEXT_LABEL_AUTO_SIZE["min_height"],
-            math.ceil(
-                line_count * TEXT_LABEL_AUTO_SIZE["line_height"]
-                + TEXT_LABEL_AUTO_SIZE["padding_y"]
-            ),
-        ),
-    }
-
-
-def _resolved_create_geometry(action: dict) -> dict:
-    geometry = deepcopy(action["geometry"])
-    if action["object_type"] == "text-label":
-        return _fit_text_label_geometry(geometry, action.get("text"))
-    return geometry
-
-
-def _handle_point(geometry: dict, handle: str) -> dict:
-    if handle == "left":
-        return {"x": geometry["x"], "y": geometry["y"] + geometry["h"] / 2}
-    if handle == "top":
-        return {"x": geometry["x"] + geometry["w"] / 2, "y": geometry["y"]}
-    if handle == "bottom":
-        return {"x": geometry["x"] + geometry["w"] / 2, "y": geometry["y"] + geometry["h"]}
-    return {"x": geometry["x"] + geometry["w"], "y": geometry["y"] + geometry["h"] / 2}
-
-
-def _compute_connector_geometry(state: dict, connector: dict) -> Optional[dict]:
-    source_result = _find_entity(state, connector["source"])
-    target_result = _find_entity(state, connector["target"])
-    if source_result is None or target_result is None:
-        return None
-
-    source_geometry = source_result[2]["geometry"]
-    target_geometry = target_result[2]["geometry"]
-    return {
-        "sourcePoint": _handle_point(
-            source_geometry,
-            connector.get("sourceHandle", "right"),
-        ),
-        "targetPoint": _handle_point(
-            target_geometry,
-            connector.get("targetHandle", "left"),
-        ),
-    }
-
-
 def normalize_canvas_state(state: dict) -> dict:
-    valid_node_ids = _node_ids(state)
+    valid_node_id_set = node_ids(state)
     normalized_connectors = []
     for connector in state["connectors"]:
-        if connector["source"] not in valid_node_ids:
+        if connector["source"] not in valid_node_id_set:
             continue
-        if connector["target"] not in valid_node_ids:
+        if connector["target"] not in valid_node_id_set:
             continue
-        connector["geometry"] = _compute_connector_geometry(state, connector)
+        connector["geometry"] = compute_connector_geometry(state, connector)
         normalized_connectors.append(connector)
 
     state["connectors"] = normalized_connectors
-    state["selection"] = _canonical_selection(state)
+    state["selection"] = canonical_selection(state)
     return state
 
 
@@ -479,92 +449,10 @@ def _check_state_valid(state: dict) -> None:
     validation_error = validate_canvas_state(state)
     if validation_error:
         raise CanvasActionPreconditionError(
-            f"Canvas state is invalid: {validation_error}"
+            f"Canvas state is invalid: {validation_error}",
+            error_code="invalid_canvas_state",
+            error_details={"validationError": validation_error},
         )
-
-
-def _check_create_preconditions(state: dict, action: dict) -> None:
-    if action["id"] in _entity_ids(state):
-        raise CanvasActionPreconditionError(
-            f"Entity {action['id']!r} already exists."
-        )
-    _require_geometry_within_canvas(
-        _resolved_create_geometry(action),
-        f"Create would place entity {action['id']!r} outside canvas bounds.",
-    )
-
-
-def _check_select_preconditions(state: dict, action: dict) -> None:
-    for entity_id in action["targets"]:
-        _require_entity(state, entity_id)
-
-
-def _check_move_preconditions(state: dict, action: dict) -> None:
-    for entity_id in action["targets"]:
-        _collection_name, _index, entity = _require_entity(
-            state,
-            entity_id,
-            ("objects",),
-        )
-        next_geometry = deepcopy(entity["geometry"])
-        next_geometry["x"] += action["delta"]["dx"]
-        next_geometry["y"] += action["delta"]["dy"]
-        _require_geometry_within_canvas(
-            next_geometry,
-            f"Move would place object {entity_id!r} outside canvas bounds.",
-        )
-
-
-def _check_resize_preconditions(state: dict, action: dict) -> None:
-    _require_entity(state, action["target"], ("objects",))
-    _require_geometry_within_canvas(
-        action["geometry"],
-        f"Resize would place object {action['target']!r} outside canvas bounds.",
-    )
-
-
-def _check_connect_preconditions(state: dict, action: dict) -> None:
-    if action["id"] in _entity_ids(state):
-        raise CanvasActionPreconditionError(
-            f"Entity {action['id']!r} already exists."
-        )
-    _require_entity(state, action["source"], ("objects",))
-    _require_entity(state, action["target"], ("objects",))
-    if action["source"] == action["target"]:
-        raise CanvasActionPreconditionError(
-            "Connect source and target must be different."
-        )
-
-
-def _resolve_annotation_target(state: dict, action: dict) -> Tuple[str, dict, str]:
-    collection_name, _index, entity = _require_entity(state, action["target"])
-    expected_field = "text" if collection_name == "objects" else "label"
-    requested_field = action.get("field")
-    if requested_field is not None and requested_field != expected_field:
-        raise CanvasActionPreconditionError(
-            f"Field {requested_field!r} is not valid for target {action['target']!r}."
-        )
-    return collection_name, entity, expected_field
-
-
-def _check_annotate_preconditions(state: dict, action: dict) -> None:
-    collection_name, entity, field = _resolve_annotation_target(state, action)
-    if collection_name != "objects" or field != "text" or entity["type"] != "text-label":
-        return
-
-    next_geometry = _fit_text_label_geometry(entity["geometry"], action["text"])
-    _require_geometry_within_canvas(
-        next_geometry,
-        (
-            f"Annotate would resize text label {action['target']!r} "
-            "outside canvas bounds."
-        ),
-    )
-
-
-def _check_delete_preconditions(state: dict, action: dict) -> None:
-    for entity_id in action["targets"]:
-        _require_entity(state, entity_id)
 
 
 def _execute_create(state: dict, action: dict) -> dict:
@@ -572,7 +460,7 @@ def _execute_create(state: dict, action: dict) -> dict:
         "id": action["id"],
         "type": action["object_type"],
         "content": {"text": action.get("text", "")},
-        "geometry": _resolved_create_geometry(action),
+        "geometry": deepcopy(action["geometry"]),
     }
     state["objects"].append(entity)
     previous_selection = deepcopy(state["selection"])
@@ -656,13 +544,28 @@ def _execute_connect(state: dict, action: dict) -> dict:
     }
 
 
+def _resolve_annotation_target_for_execution(state: dict, action: dict) -> Tuple[str, dict, str]:
+    collection_name, _index, entity = _require_entity(state, action["target"])
+    expected_field = "text" if collection_name == "objects" else "label"
+    requested_field = action.get("field")
+    if requested_field is not None and requested_field != expected_field:
+        raise CanvasActionPreconditionError(
+            f"Field {requested_field!r} is not valid for target {action['target']!r}.",
+            error_code="annotation_field_mismatch",
+            error_details={
+                "entityId": action["target"],
+                "expectedField": expected_field,
+                "requestedField": requested_field,
+            },
+        )
+    return collection_name, entity, expected_field
+
+
 def _execute_annotate(state: dict, action: dict) -> dict:
-    collection_name, entity, field = _resolve_annotation_target(state, action)
+    collection_name, entity, field = _resolve_annotation_target_for_execution(state, action)
     previous_value = entity["content"].get(field, "")
     previous_geometry = deepcopy(entity["geometry"]) if collection_name == "objects" else None
     entity["content"][field] = action["text"]
-    if collection_name == "objects" and entity["type"] == "text-label" and field == "text":
-        entity["geometry"] = _fit_text_label_geometry(entity["geometry"], action["text"])
     return {
         "collection_name": collection_name,
         "field": field,
@@ -705,9 +608,7 @@ def _execute_delete(state: dict, action: dict) -> dict:
         entity for entity in state["objects"] if entity["id"] not in object_ids
     ]
     state["connectors"] = [
-        entity
-        for entity in state["connectors"]
-        if entity["id"] not in connector_ids
+        entity for entity in state["connectors"] if entity["id"] not in connector_ids
     ]
     state["selection"] = [
         entity_id
@@ -721,92 +622,6 @@ def _execute_delete(state: dict, action: dict) -> dict:
         "removed_connectors": removed_connectors,
         "previous_selection": previous_selection,
     }
-
-
-def _check_create_postcondition(state: dict, action: dict, context: dict) -> None:
-    entity = _require_entity(state, action["id"], ("objects",))[2]
-    if entity["type"] != action["object_type"]:
-        raise CanvasActionPostconditionError(
-            f"Created object {action['id']!r} has the wrong type."
-        )
-    if entity["type"] == "text-label":
-        expected_geometry = _fit_text_label_geometry(
-            context["created_entity"]["geometry"],
-            entity["content"].get("text", ""),
-        )
-        if entity["geometry"] != expected_geometry:
-            raise CanvasActionPostconditionError(
-                f"Created text label {action['id']!r} was not auto-sized."
-            )
-
-
-def _check_select_postcondition(state: dict, action: dict, context: dict) -> None:
-    expected_selection = _canonical_selection({"selection": state["selection"], **state})
-    if state["selection"] != expected_selection:
-        raise CanvasActionPostconditionError("Selection contains invalid ids.")
-
-
-def _check_move_postcondition(state: dict, action: dict, context: dict) -> None:
-    for entity_id in action["targets"]:
-        entity = _require_entity(state, entity_id, ("objects",))[2]
-        previous_geometry = context["previous_geometries"][entity_id]
-        if entity["geometry"]["x"] != previous_geometry["x"] + action["delta"]["dx"]:
-            raise CanvasActionPostconditionError(
-                f"Move did not update x for object {entity_id!r}."
-            )
-        if entity["geometry"]["y"] != previous_geometry["y"] + action["delta"]["dy"]:
-            raise CanvasActionPostconditionError(
-                f"Move did not update y for object {entity_id!r}."
-            )
-
-
-def _check_resize_postcondition(state: dict, action: dict, context: dict) -> None:
-    entity = _require_entity(state, action["target"], ("objects",))[2]
-    if entity["geometry"] != action["geometry"]:
-        raise CanvasActionPostconditionError(
-            f"Resize did not apply geometry for {action['target']!r}."
-        )
-
-
-def _check_connect_postcondition(state: dict, action: dict, context: dict) -> None:
-    connector = _require_entity(state, action["id"], ("connectors",))[2]
-    if connector["source"] != action["source"] or connector["target"] != action["target"]:
-        raise CanvasActionPostconditionError(
-            f"Connector {action['id']!r} endpoints do not match the action."
-        )
-    if connector.get("geometry") is None:
-        raise CanvasActionPostconditionError(
-            f"Connector {action['id']!r} is missing computed geometry."
-        )
-
-
-def _check_annotate_postcondition(state: dict, action: dict, context: dict) -> None:
-    _collection_name, entity, field = _resolve_annotation_target(state, action)
-    if entity["content"].get(field, "") != action["text"]:
-        raise CanvasActionPostconditionError(
-            f"Annotation did not update {field} for {action['target']!r}."
-        )
-    if (
-        _collection_name == "objects"
-        and entity["type"] == "text-label"
-        and field == "text"
-    ):
-        expected_geometry = _fit_text_label_geometry(
-            context["previous_geometry"],
-            action["text"],
-        )
-        if entity["geometry"] != expected_geometry:
-            raise CanvasActionPostconditionError(
-                f"Text label {action['target']!r} was not auto-sized after annotation."
-            )
-
-
-def _check_delete_postcondition(state: dict, action: dict, context: dict) -> None:
-    for removed_id in context["removed_ids"]:
-        if _find_entity(state, removed_id) is not None:
-            raise CanvasActionPostconditionError(
-                f"Deleted entity {removed_id!r} still exists."
-            )
 
 
 def _restore_entities(collection: List[dict], removed_entities: List[Tuple[int, dict]]) -> None:
@@ -845,9 +660,7 @@ def _undo_connect(state: dict, action: dict, context: dict) -> None:
 
 
 def _undo_annotate(state: dict, action: dict, context: dict) -> None:
-    collection_name, entity, field = _resolve_annotation_target(state, action)
-    if collection_name not in ("objects", "connectors"):
-        raise CanvasActionPreconditionError("Unsupported annotation target during undo.")
+    collection_name, entity, field = _resolve_annotation_target_for_execution(state, action)
     entity["content"][field] = context["previous_value"]
     if collection_name == "objects" and context["previous_geometry"] is not None:
         entity["geometry"] = deepcopy(context["previous_geometry"])
@@ -869,10 +682,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "geometry must remain inside canvas bounds",
         ],
         deterministic_executor="_execute_create",
-        postcondition_checker="_check_create_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_create",
         execute=_execute_create,
-        check_postcondition=_check_create_postcondition,
         undo=_undo_create,
     ),
     "Select": ActionHandler(
@@ -883,10 +695,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "targets must be existing objects or connectors",
         ],
         deterministic_executor="_execute_select",
-        postcondition_checker="_check_select_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_select",
         execute=_execute_select,
-        check_postcondition=_check_select_postcondition,
         undo=_undo_select,
     ),
     "Move": ActionHandler(
@@ -898,10 +709,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "moving must keep every object inside canvas bounds",
         ],
         deterministic_executor="_execute_move",
-        postcondition_checker="_check_move_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_move",
         execute=_execute_move,
-        check_postcondition=_check_move_postcondition,
         undo=_undo_move,
     ),
     "Resize": ActionHandler(
@@ -913,10 +723,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "resized geometry must remain inside canvas bounds",
         ],
         deterministic_executor="_execute_resize",
-        postcondition_checker="_check_resize_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_resize",
         execute=_execute_resize,
-        check_postcondition=_check_resize_postcondition,
         undo=_undo_resize,
     ),
     "Connect": ActionHandler(
@@ -929,10 +738,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "source and target must be different",
         ],
         deterministic_executor="_execute_connect",
-        postcondition_checker="_check_connect_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_connect",
         execute=_execute_connect,
-        check_postcondition=_check_connect_postcondition,
         undo=_undo_connect,
     ),
     "Annotate": ActionHandler(
@@ -945,10 +753,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "annotating a text label auto-resizes it to fit the updated text",
         ],
         deterministic_executor="_execute_annotate",
-        postcondition_checker="_check_annotate_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_annotate",
         execute=_execute_annotate,
-        check_postcondition=_check_annotate_postcondition,
         undo=_undo_annotate,
     ),
     "Delete": ActionHandler(
@@ -960,10 +767,9 @@ ACTION_HANDLERS: Dict[str, ActionHandler] = {
             "deleting objects also deletes any attached connectors",
         ],
         deterministic_executor="_execute_delete",
-        postcondition_checker="_check_delete_postcondition",
+        postcondition_checker="rule_registry.post_action",
         undo_handler="_undo_delete",
         execute=_execute_delete,
-        check_postcondition=_check_delete_postcondition,
         undo=_undo_delete,
     ),
 }
@@ -988,46 +794,206 @@ def get_action_catalog() -> List[dict]:
     return catalog
 
 
-def _check_preconditions(state: dict, action: dict) -> None:
-    op = action["op"]
-    if op == "Create":
-        _check_create_preconditions(state, action)
-    elif op == "Select":
-        _check_select_preconditions(state, action)
-    elif op == "Move":
-        _check_move_preconditions(state, action)
-    elif op == "Resize":
-        _check_resize_preconditions(state, action)
-    elif op == "Connect":
-        _check_connect_preconditions(state, action)
-    elif op == "Annotate":
-        _check_annotate_preconditions(state, action)
-    elif op == "Delete":
-        _check_delete_preconditions(state, action)
-    else:
-        raise CanvasActionSchemaError(f"Unsupported action op {op!r}.")
+def _run_rule_phase(
+    *,
+    rule_registry: RuleRegistry,
+    phase: str,
+    state: dict,
+    action: Optional[dict],
+    action_index: Optional[int],
+    handler: Optional[ActionHandler],
+    action_context: Optional[dict],
+    batch_metadata: dict,
+    options: dict,
+) -> List[RuleEffect]:
+    from canvas_rules import RuleContext
+
+    context = RuleContext(
+        phase=phase,
+        state=state,
+        action=action,
+        action_index=action_index,
+        handler=handler,
+        action_context=action_context,
+        batch_metadata=batch_metadata,
+        options=options,
+    )
+    return rule_registry.run(context)
 
 
-def execute_action_batch(initial_state: dict, actions: List[dict]) -> dict:
+def _decorate_action_error(error: CanvasActionError, index: int, raw_action: dict) -> CanvasActionError:
+    details = deepcopy(getattr(error, "error_details", {}) or {})
+    details.setdefault("actionIndex", index)
+    details.setdefault("op", raw_action.get("op"))
+    error_cls = error.__class__
+    return error_cls(
+        f"Action {index} ({raw_action.get('op', 'unknown')}) failed: {error}",
+        error_code=getattr(error, "error_code", None),
+        error_rule=getattr(error, "error_rule", None),
+        error_details=details,
+        repair_hint=getattr(error, "repair_hint", None),
+    )
+
+
+def _error_from_rule_violation(
+    violation_error: RuleViolationError,
+    *,
+    action_index: Optional[int] = None,
+    raw_action: Optional[dict] = None,
+) -> CanvasActionError:
+    violation = violation_error.violation
+    details = deepcopy(violation.details)
+    message = violation.message
+    if action_index is not None:
+        message = (
+            f"Action {action_index} ({raw_action.get('op', 'unknown')}) failed: "
+            f"{violation.message}"
+        )
+        details.setdefault("actionIndex", action_index)
+    if raw_action is not None:
+        details.setdefault("op", raw_action.get("op"))
+
+    error_cls = (
+        CanvasActionPostconditionError
+        if violation.phase == "post_action"
+        else CanvasActionPreconditionError
+    )
+    return error_cls(
+        message,
+        error_code=violation.code,
+        error_rule=violation.rule,
+        error_details=details,
+        repair_hint=violation.repair_hint,
+    )
+
+
+def _record_layout_affected_object_ids(
+    action: dict,
+    action_context: dict,
+    rule_effects: List[RuleEffect],
+    order_map: Dict[str, int],
+    action_index: int,
+    state: dict,
+) -> None:
+    affected_ids = []
+    if action["op"] == "Create":
+        affected_ids = [action["id"]]
+    elif action["op"] == "Move":
+        affected_ids = list(action["targets"])
+    elif action["op"] == "Resize":
+        affected_ids = [action["target"]]
+    elif action["op"] == "Annotate":
+        if any(effect.rule == "text_label_auto_fit" for effect in rule_effects):
+            result = find_entity(state, action["target"])
+            if result is not None and result[0] == "objects":
+                affected_ids = [action["target"]]
+
+    for object_id in affected_ids:
+        order_map.setdefault(object_id, action_index)
+
+
+def _extract_layout_adjustments(rule_effects: List[RuleEffect]) -> List[dict]:
+    adjustments_by_id = {}
+    ordered_ids = []
+
+    for effect in rule_effects:
+        if effect.rule not in {"no_overlap_layout", "alignment_layout"}:
+            continue
+        if "id" not in effect.details or "from" not in effect.details or "to" not in effect.details:
+            continue
+
+        object_id = effect.details["id"]
+        if object_id not in adjustments_by_id:
+            adjustments_by_id[object_id] = {
+                "id": object_id,
+                "from": deepcopy(effect.details["from"]),
+                "to": deepcopy(effect.details["to"]),
+                "rules": [effect.rule],
+            }
+            ordered_ids.append(object_id)
+            continue
+
+        adjustments_by_id[object_id]["to"] = deepcopy(effect.details["to"])
+        adjustments_by_id[object_id]["rules"].append(effect.rule)
+
+    return [adjustments_by_id[object_id] for object_id in ordered_ids]
+
+
+def execute_action_batch(
+    initial_state: dict,
+    actions: List[dict],
+    layout_policy: str = "none",
+    rule_registry: Optional[RuleRegistry] = None,
+) -> dict:
+    if layout_policy not in LAYOUT_POLICY_VALUES:
+        raise CanvasActionSchemaError(
+            f"Unsupported layout policy {layout_policy!r}.",
+            error_code="schema_unsupported_layout_policy",
+            error_details={"layoutPolicy": layout_policy},
+        )
+
+    registry = rule_registry or DEFAULT_RULE_REGISTRY
     working_state = normalize_canvas_state(deepcopy(initial_state))
     _check_state_valid(working_state)
 
     execution_log = []
     executed_actions = []
+    batch_rule_effects: List[RuleEffect] = []
+    batch_metadata = {
+        "layout_affected_order_map": {},
+    }
+    options = {
+        "layoutPolicy": layout_policy,
+    }
 
     for index, raw_action in enumerate(actions):
         try:
             action = validate_action_payload(raw_action)
             handler = ACTION_HANDLERS[action["op"]]
-            _check_preconditions(working_state, action)
-            context = handler.execute(working_state, action)
+            _run_rule_phase(
+                rule_registry=registry,
+                phase="pre_action",
+                state=working_state,
+                action=action,
+                action_index=index,
+                handler=handler,
+                action_context=None,
+                batch_metadata=batch_metadata,
+                options=options,
+            )
+            action_context = handler.execute(working_state, action)
             normalize_canvas_state(working_state)
-            handler.check_postcondition(working_state, action, context)
+            action_rule_effects = _run_rule_phase(
+                rule_registry=registry,
+                phase="post_action",
+                state=working_state,
+                action=action,
+                action_index=index,
+                handler=handler,
+                action_context=action_context,
+                batch_metadata=batch_metadata,
+                options=options,
+            )
+            if action_rule_effects:
+                batch_rule_effects.extend(action_rule_effects)
+            normalize_canvas_state(working_state)
             _check_state_valid(working_state)
-        except CanvasActionError as exc:
-            raise CanvasActionPreconditionError(
-                f"Action {index} ({raw_action.get('op', 'unknown')}) failed: {exc}"
+            _record_layout_affected_object_ids(
+                action,
+                action_context,
+                action_rule_effects,
+                batch_metadata["layout_affected_order_map"],
+                index,
+                working_state,
+            )
+        except RuleViolationError as exc:
+            raise _error_from_rule_violation(
+                exc,
+                action_index=index,
+                raw_action=raw_action,
             ) from exc
+        except CanvasActionError as exc:
+            raise _decorate_action_error(exc, index, raw_action) from exc
 
         execution_log.append(
             {
@@ -1041,20 +1007,104 @@ def execute_action_batch(initial_state: dict, actions: List[dict]) -> dict:
             {
                 "index": index,
                 "action": deepcopy(action),
-                "context": deepcopy(context),
+                "context": deepcopy(action_context),
+                "rule_effects": deepcopy(action_rule_effects),
                 "undo_handler": handler.undo_handler,
             }
         )
+
+    try:
+        batch_phase_effects = _run_rule_phase(
+            rule_registry=registry,
+            phase="post_batch",
+            state=working_state,
+            action=None,
+            action_index=None,
+            handler=None,
+            action_context=None,
+            batch_metadata=batch_metadata,
+            options=options,
+        )
+        if batch_phase_effects:
+            batch_rule_effects.extend(batch_phase_effects)
+        normalize_canvas_state(working_state)
+        _check_state_valid(working_state)
+    except RuleViolationError as exc:
+        raise _error_from_rule_violation(exc) from exc
+    except CanvasActionError as exc:
+        raise exc
 
     return {
         "canvas_state": working_state,
         "execution_log": execution_log,
         "executed_actions": executed_actions,
+        "rule_effects": deepcopy(batch_rule_effects),
+        "layout_policy_applied": layout_policy,
+        "layout_adjustments": _extract_layout_adjustments(batch_rule_effects),
     }
 
 
-def undo_executed_actions(state: dict, executed_actions: List[dict]) -> dict:
+def _undo_rule_effect(state: dict, effect: RuleEffect) -> None:
+    if effect.kind != "restore_geometry":
+        raise CanvasActionPreconditionError(
+            f"Unsupported rule effect kind {effect.kind!r} during undo.",
+            error_code="unsupported_rule_effect",
+            error_details={"kind": effect.kind, "rule": effect.rule},
+        )
+
+    entity_id = effect.undo_payload.get("entityId")
+    geometry = effect.undo_payload.get("geometry")
+    if not isinstance(entity_id, str) or not isinstance(geometry, dict):
+        raise CanvasActionPreconditionError(
+            "Rule effect undo payload is invalid.",
+            error_code="invalid_rule_effect_payload",
+            error_details={"rule": effect.rule},
+        )
+
+    result = find_entity(state, entity_id)
+    if result is None or result[0] != "objects":
+        return
+    result[2]["geometry"] = deepcopy(geometry)
+
+
+def _undo_legacy_layout_adjustments(state: dict, layout_adjustments: List[dict]) -> None:
+    for adjustment in layout_adjustments:
+        entity_id = adjustment.get("id")
+        result = find_entity(state, entity_id)
+        if result is None or result[0] != "objects":
+            continue
+        result[2]["geometry"]["x"] = adjustment["from"]["x"]
+        result[2]["geometry"]["y"] = adjustment["from"]["y"]
+
+
+def undo_executed_actions(
+    state: dict,
+    executed_actions: List[dict],
+    rule_effects: Optional[List[RuleEffect]] = None,
+    layout_adjustments: Optional[List[dict]] = None,
+) -> dict:
     working_state = deepcopy(state)
+
+    if (
+        rule_effects
+        and isinstance(rule_effects, list)
+        and isinstance(rule_effects[0], dict)
+        and {"id", "from", "to"}.issubset(rule_effects[0].keys())
+        and "kind" not in rule_effects[0]
+    ):
+        layout_adjustments = rule_effects
+        rule_effects = None
+
+    if rule_effects:
+        for effect in reversed(rule_effects):
+            _undo_rule_effect(working_state, effect)
+        normalize_canvas_state(working_state)
+        _check_state_valid(working_state)
+    elif layout_adjustments:
+        _undo_legacy_layout_adjustments(working_state, layout_adjustments)
+        normalize_canvas_state(working_state)
+        _check_state_valid(working_state)
+
     for entry in reversed(executed_actions):
         action = entry["action"]
         handler = ACTION_HANDLERS[action["op"]]

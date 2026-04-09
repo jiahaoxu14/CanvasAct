@@ -385,6 +385,15 @@ function describeAction(action) {
   }
 }
 
+function describeLayoutAdjustmentSummary(layoutAdjustments) {
+  const count = Array.isArray(layoutAdjustments) ? layoutAdjustments.length : 0;
+  if (!count) {
+    return "";
+  }
+
+  return `Auto-arranged ${count} object(s) for cleaner spacing and alignment.`;
+}
+
 function getActionReferenceIds(action) {
   const ids = new Set();
 
@@ -973,6 +982,7 @@ function Whiteboard() {
         {
           actions,
           canvasState: beforeCanvasState,
+          layoutPolicy: "no-overlap",
         },
         "Failed to execute atomic actions.",
       );
@@ -987,6 +997,8 @@ function Whiteboard() {
         actions: cloneSnapshotData(actions),
         canvasStateBefore: beforeCanvasState,
         canvasStateAfter: cloneSnapshotData(payload.canvasState),
+        layoutPolicyApplied: payload.layoutPolicyApplied,
+        layoutAdjustments: cloneSnapshotData(payload.layoutAdjustments ?? []),
       });
       setPlanPreview(null);
       setIsEditingPlan(false);
@@ -995,7 +1007,10 @@ function Whiteboard() {
       setChatPrompt("");
       setPlannerState({
         status: "success",
-        message: `Executed ${actions.length} action(s). Review the action history to undo the AI batch if needed.`,
+        message:
+          payload.layoutAdjustments?.length > 0
+            ? `Executed ${actions.length} action(s). ${describeLayoutAdjustmentSummary(payload.layoutAdjustments)}`
+            : `Executed ${actions.length} action(s). Review the action history to undo the AI batch if needed.`,
       });
 
       try {
@@ -1122,6 +1137,7 @@ function Whiteboard() {
             actions: actionPayload.actions,
             dry_run: true,
             canvasState: workingCanvasState,
+            layoutPolicy: "no-overlap",
           },
           "Failed to simulate planned actions.",
         );
@@ -1133,6 +1149,8 @@ function Whiteboard() {
           referenceResolution:
             actionPayload.referenceResolution ?? emptyReferenceResolution,
           failureLog: actionPayload.failureLog ?? [],
+          layoutPolicyApplied: simulationPayload.layoutPolicyApplied,
+          layoutAdjustments: simulationPayload.layoutAdjustments ?? [],
         });
         workingCanvasState = simulationPayload.canvasState;
       }
@@ -1520,6 +1538,12 @@ function Whiteboard() {
                     {entry.undone ? <span>undone</span> : null}
                   </div>
 
+                  {entry.layoutAdjustments?.length ? (
+                    <div className="history-entry-note">
+                      {describeLayoutAdjustmentSummary(entry.layoutAdjustments)}
+                    </div>
+                  ) : null}
+
                   {entry.actions.length ? (
                     <div className="history-entry-actions">
                       {entry.actions.map((action, index) => (
@@ -1611,6 +1635,12 @@ function Whiteboard() {
                           {step.referenceResolution.ambiguousReferences
                             .map((entry) => entry.surfaceText)
                             .join(", ")}
+                        </div>
+                      ) : null}
+
+                      {step.layoutAdjustments?.length ? (
+                        <div className="plan-step-note">
+                          {describeLayoutAdjustmentSummary(step.layoutAdjustments)}
                         </div>
                       ) : null}
 

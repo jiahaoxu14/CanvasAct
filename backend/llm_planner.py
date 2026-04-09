@@ -13,9 +13,11 @@ from canvas_actions import (
     CANVAS_BOUNDS,
     HANDLE_VALUES,
     CanvasActionError,
+    action_error_payload,
     execute_action_batch,
     validate_against_schema,
 )
+from canvas_rules import DEFAULT_RULE_REGISTRY
 from canvas_state import empty_canvas_state, validate_canvas_state
 
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
@@ -779,12 +781,10 @@ def build_action_system_prompt(canvas_state: dict) -> str:
             "Create may only create object_type 'sticky-note' or 'text-label'.",
             "Use AVAILABLE_NEW_IDS_JSON for any new object or connector ID.",
             "Every targets array must be non-empty.",
-            "Connect actions must include both source and target.",
             "Move actions must include delta with numeric dx and dy.",
-            "Move, Resize, and Create must keep object geometry inside CANVAS_BOUNDS.",
-            "Annotate on a text-label automatically resizes the label to fit the updated text.",
             "Do not include fields that are irrelevant for the chosen op.",
             "Do not reference an entity after deleting it in the same response.",
+            *DEFAULT_RULE_REGISTRY.collect_planner_guidance(),
             "CURRENT_CANVAS_STATE_JSON:",
             json.dumps(_compact_canvas_context(canvas_state), indent=2, sort_keys=True),
             "EXISTING_ENTITY_IDS_JSON:",
@@ -818,30 +818,18 @@ def build_action_user_prompt(
     )
 
 
-def _repair_hints_for_error(validation_error: str) -> List[str]:
-    hints = []
-    lowered = validation_error.lower()
-    if ".delta is required" in validation_error or "delta is required" in lowered:
-        hints.append(
-            "Move actions must include delta as an object with numeric dx and dy."
-        )
-    if "outside canvas bounds" in lowered:
-        hints.append(
-            "Move, Resize, and Create actions must keep object geometry inside CANVAS_BOUNDS."
-        )
-    if ".target is required" in lowered or ".source is required" in lowered:
-        hints.append(
-            "Connect actions must include both source and target."
-        )
-    if "does not exist" in lowered or "not valid for this action" in lowered:
-        hints.append(
-            "Use only existing valid object or connector IDs from CURRENT_CANVAS_STATE_JSON, or a suggested unused ID for Create and Connect."
-        )
-    if "at least 1 item" in lowered or "targets" in lowered and "required" in lowered:
-        hints.append("Every targets array must be non-empty.")
-    if "unsupported field" in lowered:
-        hints.append("Do not include fields that are not allowed for the selected op.")
-    return hints or ["Return only executable actions for the current scene graph."]
+def _repair_hints_for_structured_error(structured_error: Optional[dict]) -> List[str]:
+    if not structured_error:
+        return ["Return only executable actions for the current scene graph."]
+
+    repair_hint = structured_error.get("repairHint")
+    if isinstance(repair_hint, str) and repair_hint.strip():
+        return [repair_hint.strip()]
+    if isinstance(repair_hint, list):
+        hints = [item.strip() for item in repair_hint if isinstance(item, str) and item.strip()]
+        if hints:
+            return hints
+    return ["Return only executable actions for the current scene graph."]
 
 
 def build_action_repair_prompt(
@@ -851,9 +839,11 @@ def build_action_repair_prompt(
     previous_actions: List[dict],
     validation_error: str,
     failure_log: List[dict],
+    structured_error: Optional[dict] = None,
 ) -> str:
     hint_lines = [
-        f"REPAIR_HINT: {hint}" for hint in _repair_hints_for_error(validation_error)
+        f"REPAIR_HINT: {hint}"
+        for hint in _repair_hints_for_structured_error(structured_error)
     ]
     return "\n".join(
         [
@@ -872,6 +862,8 @@ def build_action_repair_prompt(
             json.dumps(previous_actions, indent=2, sort_keys=True),
             "VALIDATION_ERROR:",
             validation_error,
+            "STRUCTURED_ERROR_JSON:",
+            json.dumps(structured_error or {}, indent=2, sort_keys=True),
             "FAILURE_LOG_JSON:",
             json.dumps(failure_log, indent=2, sort_keys=True),
             *hint_lines,
@@ -1039,6 +1031,12 @@ def validate_action_response(payload: object, canvas_state: dict) -> dict:
     normalized_payload = _normalize_action_output_payload(payload)
     try:
         validate_against_schema(ACTION_RESPONSE_SCHEMA, normalized_payload)
+    except CanvasActionError as exc:
+        error = LLMPlannerUpstreamError(
+            f"Atomic action response was invalid: {exc}"
+        )
+        error.structured_error = action_error_payload(exc, include_status=False)
+        raise error from exc
     except Exception as exc:
         raise LLMPlannerUpstreamError(
             f"Atomic action response was invalid: {exc}"
@@ -1050,11 +1048,17 @@ def validate_action_response(payload: object, canvas_state: dict) -> dict:
     ]
 
     try:
-        execute_action_batch(deepcopy(canvas_state), canonical_actions)
+        execute_action_batch(
+            deepcopy(canvas_state),
+            canonical_actions,
+            layout_policy="no-overlap",
+        )
     except CanvasActionError as exc:
-        raise LLMPlannerUpstreamError(
+        error = LLMPlannerUpstreamError(
             f"Atomic action response was invalid for the current canvas state: {exc}"
-        ) from exc
+        )
+        error.structured_error = action_error_payload(exc, include_status=False)
+        raise error from exc
 
     return {"actions": canonical_actions}
 
@@ -1102,11 +1106,13 @@ def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
                 "failureLog": failure_log,
             }
         except LLMPlannerUpstreamError as exc:
+            structured_error = deepcopy(getattr(exc, "structured_error", None))
             failure_log.append(
                 {
                     "attempt": attempt,
                     "error": str(exc),
                     "actions": deepcopy(previous_actions),
+                    "structuredError": structured_error,
                 }
             )
             if attempt >= ACTION_PLANNING_MAX_ATTEMPTS:
@@ -1118,6 +1124,7 @@ def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
                 previous_actions=previous_actions,
                 validation_error=str(exc),
                 failure_log=failure_log,
+                structured_error=structured_error,
             )
 
     raise LLMPlannerUpstreamError("Action planning failed without a result.")

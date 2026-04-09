@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request
 
 from canvas_actions import (
     CanvasActionError,
+    action_error_payload,
     execute_action_batch,
     get_action_catalog,
     validate_action_request,
@@ -86,12 +87,7 @@ def create_app() -> Flask:
             validate_action_request(payload)
         except CanvasActionError as exc:
             return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
+                jsonify(action_error_payload(exc, include_status=True)),
                 400,
             )
 
@@ -127,15 +123,11 @@ def create_app() -> Flask:
             execution_result = execute_action_batch(
                 base_canvas_state,
                 payload["actions"],
+                layout_policy=payload.get("layoutPolicy", "none"),
             )
         except CanvasActionError as exc:
             return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
+                jsonify(action_error_payload(exc, include_status=True)),
                 400,
             )
 
@@ -153,6 +145,8 @@ def create_app() -> Flask:
                     entry["undo_handler"]
                     for entry in execution_result["executed_actions"]
                 ],
+                "layoutPolicyApplied": execution_result["layout_policy_applied"],
+                "layoutAdjustments": execution_result["layout_adjustments"],
                 "canvasState": execution_result["canvas_state"],
             }
         )

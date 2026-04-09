@@ -353,6 +353,14 @@ code {
   font-weight: 700;
 }
 
+.plan-step-note,
+.history-entry-note {
+  margin-top: 0.7rem;
+  color: #1d6c4c;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .action-list,
 .history-entry-actions {
   margin-top: 0.75rem;

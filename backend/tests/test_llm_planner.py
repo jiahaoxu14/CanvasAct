@@ -1,8 +1,22 @@
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 from app import create_app
-from canvas_actions import execute_action_batch, undo_executed_actions
+from canvas_rules import (
+    DEFAULT_RULE_REGISTRY,
+    CanvasRule,
+    RuleContext,
+    RuleViolation,
+    RuleViolationError,
+    registry_with_rules,
+)
+from canvas_actions import (
+    CANVAS_BOUNDS,
+    CanvasActionPreconditionError,
+    execute_action_batch,
+    undo_executed_actions,
+)
 from llm_planner import (
     LLMPlannerUpstreamError,
     build_action_repair_prompt,
@@ -66,6 +80,55 @@ def sample_canvas_state() -> dict:
     }
 
 
+def overlapping_canvas_state() -> dict:
+    state = sample_canvas_state()
+    for item in state["objects"]:
+        if item["id"] == "n2":
+            item["geometry"]["x"] = 180
+            item["geometry"]["y"] = 100
+    return state
+
+
+def full_canvas_state() -> dict:
+    return {
+        "objects": [
+            {
+                "id": "n1",
+                "type": "sticky-note",
+                "content": {"text": "Occupies everything"},
+                "geometry": {
+                    "x": CANVAS_BOUNDS["left"],
+                    "y": CANVAS_BOUNDS["top"],
+                    "w": CANVAS_BOUNDS["right"] - CANVAS_BOUNDS["left"],
+                    "h": CANVAS_BOUNDS["bottom"] - CANVAS_BOUNDS["top"],
+                },
+            }
+        ],
+        "connectors": [],
+        "viewport": {"x": 0, "y": 0, "zoom": 1.0},
+        "selection": [],
+    }
+
+
+def rectangles_overlap(first: dict, second: dict, spacing: int = 24) -> bool:
+    return not (
+        first["x"] + first["w"] + spacing <= second["x"]
+        or second["x"] + second["w"] + spacing <= first["x"]
+        or first["y"] + first["h"] + spacing <= second["y"]
+        or second["y"] + second["h"] + spacing <= first["y"]
+    )
+
+
+def assert_no_object_overlap(test_case: unittest.TestCase, canvas_state: dict) -> None:
+    objects = canvas_state["objects"]
+    for index, first in enumerate(objects):
+        for second in objects[index + 1 :]:
+            test_case.assertFalse(
+                rectangles_overlap(first["geometry"], second["geometry"]),
+                f"Objects {first['id']} and {second['id']} overlapped.",
+            )
+
+
 class PromptContractTests(unittest.TestCase):
     def test_subgoal_prompt_includes_allowed_actions_and_forbids_invented_ids(self):
         prompt = build_subgoal_system_prompt(sample_canvas_state())
@@ -112,7 +175,10 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("AVAILABLE_NEW_IDS_JSON", prompt)
         self.assertIn("CANVAS_BOUNDS", prompt)
         self.assertIn("Every targets array must be non-empty.", prompt)
-        self.assertIn("Connect actions must include both source and target.", prompt)
+        self.assertIn("both source and target must be different existing object IDs", prompt)
+        self.assertIn("Avoid overlapping existing objects", prompt)
+        self.assertIn("simple rows or columns", prompt)
+        self.assertIn("aligned rows or columns", prompt)
         self.assertNotIn("frame", prompt.lower())
         self.assertIn("Convert this single subgoal into atomic whiteboard actions:", user_prompt)
         self.assertIn('"candidateIds": [', user_prompt)
@@ -146,6 +212,11 @@ class PromptContractTests(unittest.TestCase):
                     "actions": [{"op": "Connect", "id": "edge-1", "source": "n1"}],
                 }
             ],
+            structured_error={
+                "errorCode": "schema_required_field_missing",
+                "errorDetails": {"path": "$.target", "field": "target"},
+                "repairHint": "Connect actions must include both source and target.",
+            },
         )
 
         self.assertIn("Repair the previous atomic whiteboard action plan.", prompt)
@@ -155,6 +226,146 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("CURRENT_CANVAS_CONTEXT_FOR_REPAIR:", prompt)
         self.assertIn("CURRENT_CANVAS_STATE_JSON:", prompt)
         self.assertIn("REPAIR_HINT: Connect actions must include both source and target.", prompt)
+
+    def test_repair_prompt_includes_overlap_hint(self):
+        prompt = build_action_repair_prompt(
+            "spread notes cleanly",
+            {
+                "resolvedReferences": [],
+                "ambiguousReferences": [],
+                "unresolvedReferences": [],
+            },
+            sample_canvas_state(),
+            previous_actions=[
+                {
+                    "op": "Move",
+                    "targets": ["n1"],
+                    "delta": {"dx": 40, "dy": 0},
+                }
+            ],
+            validation_error=(
+                "Atomic action response was invalid for the current canvas state: "
+                "Layout resolution failed: no non-overlapping position found for object 'n1' within canvas bounds."
+            ),
+            failure_log=[],
+            structured_error={
+                "errorCode": "layout_resolution_failed",
+                "errorRule": "no_overlap_layout",
+                "errorDetails": {"entityId": "n1"},
+                "repairHint": "Spread objects across rows or columns with clear gaps, and avoid reusing occupied positions.",
+            },
+        )
+
+        self.assertIn(
+            "REPAIR_HINT: Spread objects across rows or columns with clear gaps, and avoid reusing occupied positions.",
+            prompt,
+        )
+        self.assertIn("STRUCTURED_ERROR_JSON:", prompt)
+
+
+class RuleRegistryTests(unittest.TestCase):
+    def test_registry_orders_rules_by_phase_priority_and_name(self):
+        first = CanvasRule(
+            name="b_rule",
+            phase="post_action",
+            ops=("Select",),
+            kind="check",
+            priority=20,
+            run=lambda _context: [],
+        )
+        second = CanvasRule(
+            name="a_rule",
+            phase="pre_action",
+            ops=("Select",),
+            kind="check",
+            priority=30,
+            run=lambda _context: [],
+        )
+        third = CanvasRule(
+            name="a_post_rule",
+            phase="post_action",
+            ops=("Select",),
+            kind="check",
+            priority=20,
+            run=lambda _context: [],
+        )
+
+        registry = registry_with_rules([first, second, third])
+
+        self.assertEqual(
+            [rule.name for rule in registry.rules],
+            ["a_rule", "a_post_rule", "b_rule"],
+        )
+
+    def test_registry_filters_rules_by_phase_and_op(self):
+        registry = registry_with_rules(
+            [
+                CanvasRule(
+                    name="move_only",
+                    phase="pre_action",
+                    ops=("Move",),
+                    kind="check",
+                    priority=10,
+                    run=lambda _context: [],
+                ),
+                CanvasRule(
+                    name="all_batch",
+                    phase="post_batch",
+                    ops=None,
+                    kind="auto_fix",
+                    priority=10,
+                    run=lambda _context: [],
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            [rule.name for rule in registry.get_rules("pre_action", "Move")],
+            ["move_only"],
+        )
+        self.assertEqual(
+            [rule.name for rule in registry.get_rules("post_batch", "Move")],
+            ["all_batch"],
+        )
+
+    def test_custom_rule_can_be_injected_without_executor_dispatch_changes(self):
+        def run_dummy_rule(context: RuleContext):
+            if context.action["targets"] == ["n1"]:
+                raise RuleViolationError(
+                    RuleViolation(
+                        code="dummy_block",
+                        rule="dummy_select_blocker",
+                        phase=context.phase,
+                        op=context.op,
+                        message="Synthetic select blocker fired.",
+                        details={"entityId": "n1"},
+                        repair_hint="Do not select n1 in this synthetic test.",
+                    )
+                )
+            return []
+
+        custom_rule = CanvasRule(
+            name="dummy_select_blocker",
+            phase="pre_action",
+            ops=("Select",),
+            kind="check",
+            priority=5,
+            planner_guidance=("Dummy guidance",),
+            repair_hint="Do not select n1 in this synthetic test.",
+            run=run_dummy_rule,
+        )
+
+        registry = registry_with_rules([*DEFAULT_RULE_REGISTRY.rules, custom_rule])
+
+        with self.assertRaises(CanvasActionPreconditionError) as context:
+            execute_action_batch(
+                sample_canvas_state(),
+                [{"op": "Select", "targets": ["n1"]}],
+                rule_registry=registry,
+            )
+
+        self.assertEqual(context.exception.error_code, "dummy_block")
+        self.assertEqual(context.exception.error_rule, "dummy_select_blocker")
 
 
 class PlannerValidationTests(unittest.TestCase):
@@ -497,6 +708,171 @@ class PlannerExecutionTests(unittest.TestCase):
 
 
 class ExecutorBehaviorTests(unittest.TestCase):
+    def test_no_overlap_create_auto_shifts_to_free_slot(self):
+        initial_state = sample_canvas_state()
+
+        result = execute_action_batch(
+            initial_state,
+            [
+                {
+                    "op": "Create",
+                    "id": "node-7",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 140, "y": 120, "w": 180, "h": 100},
+                    "text": "Overlap candidate",
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["layout_policy_applied"], "no-overlap")
+        self.assertEqual(len(result["layout_adjustments"]), 1)
+        self.assertTrue(result["rule_effects"])
+        created_object = next(
+            item for item in result["canvas_state"]["objects"] if item["id"] == "node-7"
+        )
+        self.assertNotEqual(created_object["geometry"]["x"], 140)
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_move_auto_shifts_deterministically(self):
+        initial_state = sample_canvas_state()
+        actions = [
+            {
+                "op": "Move",
+                "targets": ["n2"],
+                "delta": {"dx": -180, "dy": -10},
+            }
+        ]
+
+        first = execute_action_batch(
+            deepcopy(initial_state),
+            deepcopy(actions),
+            layout_policy="no-overlap",
+        )
+        second = execute_action_batch(
+            deepcopy(initial_state),
+            deepcopy(actions),
+            layout_policy="no-overlap",
+        )
+
+        first_n2 = next(
+            item for item in first["canvas_state"]["objects"] if item["id"] == "n2"
+        )
+        second_n2 = next(
+            item for item in second["canvas_state"]["objects"] if item["id"] == "n2"
+        )
+        self.assertEqual(first_n2["geometry"], second_n2["geometry"])
+        self.assertEqual(first["layout_adjustments"], second["layout_adjustments"])
+        assert_no_object_overlap(self, first["canvas_state"])
+
+    def test_no_overlap_annotate_repositions_resized_text_label(self):
+        initial_state = sample_canvas_state()
+        for item in initial_state["objects"]:
+            if item["id"] == "n4":
+                item["geometry"]["x"] = 310
+                item["geometry"]["y"] = 110
+                item["geometry"]["w"] = 170
+                item["geometry"]["h"] = 58
+
+        result = execute_action_batch(
+            initial_state,
+            [
+                {
+                    "op": "Annotate",
+                    "target": "n4",
+                    "text": (
+                        "Longer planning title that forces the text label to grow "
+                        "and would overlap nearby notes without layout repair."
+                    ),
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["layout_policy_applied"], "no-overlap")
+        self.assertGreaterEqual(len(result["layout_adjustments"]), 1)
+        updated_label = next(
+            item for item in result["canvas_state"]["objects"] if item["id"] == "n4"
+        )
+        self.assertGreater(updated_label["geometry"]["w"], 170)
+        self.assertTrue(result["rule_effects"])
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_leaves_clean_scene_unchanged(self):
+        result = execute_action_batch(
+            sample_canvas_state(),
+            [
+                {
+                    "op": "Select",
+                    "targets": ["n1"],
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["layout_adjustments"], [])
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_aligns_new_object_to_cleaner_row_and_grid(self):
+        result = execute_action_batch(
+            sample_canvas_state(),
+            [
+                {
+                    "op": "Create",
+                    "id": "node-7",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 905, "y": 103, "w": 180, "h": 100},
+                    "text": "New planning note",
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        created_object = next(
+            item for item in result["canvas_state"]["objects"] if item["id"] == "node-7"
+        )
+        self.assertEqual(created_object["geometry"]["x"] % 24, 0)
+        self.assertEqual(created_object["geometry"]["y"], 96)
+        self.assertEqual(len(result["layout_adjustments"]), 1)
+        self.assertIn("alignment_layout", result["layout_adjustments"][0]["rules"])
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_cleans_preexisting_overlap_from_untouched_objects(self):
+        result = execute_action_batch(
+            overlapping_canvas_state(),
+            [
+                {
+                    "op": "Select",
+                    "targets": ["n1"],
+                }
+            ],
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["layout_policy_applied"], "no-overlap")
+        self.assertTrue(result["layout_adjustments"])
+        adjusted_ids = {item["id"] for item in result["layout_adjustments"]}
+        self.assertIn("n2", adjusted_ids)
+        assert_no_object_overlap(self, result["canvas_state"])
+
+    def test_no_overlap_reports_impossible_placement(self):
+        with self.assertRaises(CanvasActionPreconditionError) as context:
+            execute_action_batch(
+                full_canvas_state(),
+                [
+                    {
+                        "op": "Create",
+                        "id": "node-7",
+                        "object_type": "sticky-note",
+                        "geometry": {"x": 0, "y": 0, "w": 180, "h": 100},
+                        "text": "No room left",
+                    }
+                ],
+                layout_policy="no-overlap",
+            )
+
+        self.assertIn("Layout resolution failed", str(context.exception))
+
     def test_annotate_auto_resizes_text_label_and_undo_restores_geometry(self):
         initial_state = sample_canvas_state()
         original_label = next(
@@ -527,10 +903,12 @@ class ExecutorBehaviorTests(unittest.TestCase):
         )
         self.assertNotEqual(updated_label["geometry"], original_geometry)
         self.assertGreater(updated_label["geometry"]["h"], original_geometry["h"])
+        self.assertTrue(result["rule_effects"])
 
         undone_state = undo_executed_actions(
             result["canvas_state"],
             result["executed_actions"],
+            result.get("rule_effects"),
         )
         restored_label = next(
             item for item in undone_state["objects"] if item["id"] == "n4"
@@ -590,6 +968,52 @@ class ApiTests(unittest.TestCase):
             item for item in payload["canvasState"]["objects"] if item["id"] == "n1"
         )
         self.assertEqual(moved_object["geometry"]["x"], 200)
+
+    def test_post_canvas_actions_accepts_layout_policy_and_returns_adjustments(self):
+        response = self.client.post(
+            "/api/canvas-actions",
+            json={
+                "actions": [
+                    {
+                        "op": "Move",
+                        "targets": ["n2"],
+                        "delta": {"dx": -180, "dy": -10},
+                    }
+                ],
+                "dry_run": True,
+                "canvasState": sample_canvas_state(),
+                "layoutPolicy": "no-overlap",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["layoutPolicyApplied"], "no-overlap")
+        self.assertTrue(payload["layoutAdjustments"])
+        assert_no_object_overlap(self, payload["canvasState"])
+
+    def test_post_canvas_actions_returns_structured_error_fields(self):
+        response = self.client.post(
+            "/api/canvas-actions",
+            json={
+                "actions": [
+                    {
+                        "op": "Move",
+                        "targets": ["missing-id"],
+                        "delta": {"dx": 10, "dy": 0},
+                    }
+                ],
+                "dry_run": True,
+                "canvasState": sample_canvas_state(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertEqual(payload["errorCode"], "invalid_move_target")
+        self.assertEqual(payload["errorRule"], "move_semantics")
+        self.assertEqual(payload["errorDetails"]["entityId"], "missing-id")
+        self.assertIn("repairHint", payload)
 
     @patch("app.plan_actions_with_llm")
     def test_llm_actions_endpoint_returns_actions_and_reference_resolution(self, mock_plan):
