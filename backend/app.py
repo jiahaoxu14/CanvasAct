@@ -13,6 +13,7 @@ from llm_planner import (
     LLMPlannerConfigError,
     LLMPlannerError,
     LLMPlannerValidationError,
+    empty_reference_resolution,
     plan_actions_with_llm,
     plan_subgoals_with_llm,
     resolve_canvas_state,
@@ -236,6 +237,14 @@ def create_app() -> Flask:
             {
                 "status": "ok",
                 "actions": llm_result["actions"],
+                "referenceResolution": llm_result.get(
+                    "referenceResolution",
+                    empty_reference_resolution(),
+                ),
+                "ambiguousReferences": llm_result.get(
+                    "referenceResolution",
+                    empty_reference_resolution(),
+                ).get("ambiguousReferences", []),
             }
         )
 

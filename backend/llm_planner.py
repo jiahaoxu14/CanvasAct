@@ -18,6 +18,33 @@ from canvas_state import empty_canvas_state, validate_canvas_state
 
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
 DEFAULT_ACTION_MODEL = "gpt-5.4"
+REFERENCE_KIND_PATTERN = (
+    r"notes?|objects?|items?|cards?|labels?|text labels?|frames?|groups?|boxes?|"
+    r"lanes?|connectors?|arrows?|edges?"
+)
+SELECTION_REFERENCE_RE = re.compile(
+    rf"\b(?:(these|selected)\s+(?P<kind>{REFERENCE_KIND_PATTERN})|current selection)\b",
+    re.IGNORECASE,
+)
+KEYWORD_REFERENCE_RE = re.compile(
+    rf"\b(?P<kind>{REFERENCE_KIND_PATTERN})\s+(?:about|with|on)\s+"
+    r"(?P<keywords>[a-z0-9][a-z0-9\s-]*?)"
+    r"(?=(?:\s+(?:and|then|into|to|from|within|inside|near|next|closest|nearest|"
+    r"leftmost|rightmost|topmost|bottommost|left|right|top|bottom)\b|[,.!?;:]|$))",
+    re.IGNORECASE,
+)
+ABSOLUTE_GEOMETRY_RE = re.compile(
+    rf"\b(?P<direction>leftmost|rightmost|topmost|bottommost)\s*(?P<kind>{REFERENCE_KIND_PATTERN})?\b",
+    re.IGNORECASE,
+)
+RELATIVE_GEOMETRY_RE = re.compile(
+    rf"\b(?P<direction>left|right|top|bottom)\s+(?P<kind>{REFERENCE_KIND_PATTERN})\b",
+    re.IGNORECASE,
+)
+NEAREST_REFERENCE_RE = re.compile(
+    rf"\b(?P<direction>closest|nearest)\s+(?P<kind>{REFERENCE_KIND_PATTERN})\b",
+    re.IGNORECASE,
+)
 
 
 class LLMPlannerError(Exception):
@@ -208,6 +235,479 @@ def suggest_available_ids(canvas_state: dict) -> dict:
     }
 
 
+def empty_reference_resolution() -> dict:
+    return {
+        "resolvedReferences": [],
+        "ambiguousReferences": [],
+        "unresolvedReferences": [],
+    }
+
+
+def _normalize_kind_term(term: Optional[str]) -> str:
+    if not term:
+        return ""
+
+    normalized = term.lower().replace("-", " ")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    singular_map = {
+        "notes": "note",
+        "objects": "object",
+        "items": "item",
+        "cards": "card",
+        "labels": "label",
+        "text labels": "text label",
+        "frames": "frame",
+        "groups": "group",
+        "boxes": "box",
+        "lanes": "lane",
+        "connectors": "connector",
+        "arrows": "arrow",
+        "edges": "edge",
+    }
+    return singular_map.get(normalized, normalized)
+
+
+def _scope_from_kind_term(term: Optional[str]) -> str:
+    normalized = _normalize_kind_term(term)
+    if normalized in ("frame", "group", "box", "lane"):
+        return "frames"
+    if normalized in ("connector", "arrow", "edge"):
+        return "connectors"
+    if normalized in ("label", "text label"):
+        return "text-labels"
+    return "objects"
+
+
+def _is_plural_reference(term: Optional[str], surface_text: str) -> bool:
+    normalized = (term or "").lower().strip()
+    return (
+        surface_text.lower() == "current selection"
+        or normalized.endswith("s")
+    )
+
+
+def _entity_content_text(entity: dict, collection_name: str) -> str:
+    if collection_name == "objects":
+        return entity.get("content", {}).get("text", "")
+    if collection_name == "frames":
+        return entity.get("content", {}).get("title", "")
+    return entity.get("content", {}).get("label", "")
+
+
+def _connector_center(geometry: Optional[dict]) -> Optional[dict]:
+    if not isinstance(geometry, dict):
+        return None
+
+    source_point = geometry.get("sourcePoint")
+    target_point = geometry.get("targetPoint")
+    if not isinstance(source_point, dict) or not isinstance(target_point, dict):
+        return None
+
+    return {
+        "x": (source_point["x"] + target_point["x"]) / 2,
+        "y": (source_point["y"] + target_point["y"]) / 2,
+    }
+
+
+def _iter_resolvable_entities(canvas_state: dict) -> List[dict]:
+    entities = []
+
+    for collection_name in ("objects", "frames", "connectors"):
+        for entity in canvas_state[collection_name]:
+            geometry = entity.get("geometry")
+            center = None
+            if collection_name == "connectors":
+                center = _connector_center(geometry)
+            elif isinstance(geometry, dict):
+                center = {
+                    "x": geometry["x"] + geometry["w"] / 2,
+                    "y": geometry["y"] + geometry["h"] / 2,
+                }
+
+            entities.append(
+                {
+                    "id": entity["id"],
+                    "collection": collection_name,
+                    "type": entity.get("type"),
+                    "geometry": geometry,
+                    "center": center,
+                    "contentText": _entity_content_text(entity, collection_name),
+                }
+            )
+
+    return entities
+
+
+def _entities_for_scope(entities: List[dict], scope: str) -> List[dict]:
+    if scope == "frames":
+        return [entity for entity in entities if entity["collection"] == "frames"]
+    if scope == "connectors":
+        return [entity for entity in entities if entity["collection"] == "connectors"]
+    if scope == "text-labels":
+        return [
+            entity
+            for entity in entities
+            if entity["collection"] == "objects" and entity["type"] == "text-label"
+        ]
+    return [entity for entity in entities if entity["collection"] == "objects"]
+
+
+def _entities_by_ids(entities: List[dict], ids: List[str]) -> List[dict]:
+    lookup = {entity["id"]: entity for entity in entities}
+    return [lookup[entity_id] for entity_id in ids if entity_id in lookup]
+
+
+def _keyword_tokens(raw_keywords: str) -> List[str]:
+    return [
+        token
+        for token in re.findall(r"[a-z0-9]+", raw_keywords.lower())
+        if len(token) > 1
+    ]
+
+
+def _match_keyword_entities(
+    entities: List[dict],
+    scope: str,
+    raw_keywords: str,
+) -> List[dict]:
+    keywords = _keyword_tokens(raw_keywords)
+    if not keywords:
+        return []
+
+    matches = []
+    for entity in _entities_for_scope(entities, scope):
+        haystack = entity["contentText"].lower()
+        if all(keyword in haystack for keyword in keywords):
+            matches.append(entity)
+    return matches
+
+
+def _reference_record(
+    *,
+    surface_text: str,
+    rule: str,
+    candidate_ids: List[str],
+    status: str,
+    entity_scope: str,
+    reason: str,
+    anchor_ids: Optional[List[str]] = None,
+    anchor_source: Optional[str] = None,
+) -> dict:
+    record = {
+        "surfaceText": surface_text,
+        "rule": rule,
+        "candidateIds": candidate_ids,
+        "status": status,
+        "entityScope": entity_scope,
+        "reason": reason,
+    }
+    if anchor_ids:
+        record["anchorIds"] = anchor_ids
+    if anchor_source:
+        record["anchorSource"] = anchor_source
+    return record
+
+
+def _sort_entities_by_direction(entities: List[dict], direction: str) -> List[dict]:
+    if direction in ("left", "leftmost"):
+        return sorted(
+            entities,
+            key=lambda entity: (
+                entity["geometry"]["x"] if entity["geometry"] else 0,
+                entity["center"]["y"] if entity["center"] else 0,
+                entity["id"],
+            ),
+        )
+    if direction in ("right", "rightmost"):
+        return sorted(
+            entities,
+            key=lambda entity: (
+                -(entity["center"]["x"] if entity["center"] else 0),
+                entity["geometry"]["x"] if entity["geometry"] else 0,
+                entity["id"],
+            ),
+        )
+    if direction in ("top", "topmost"):
+        return sorted(
+            entities,
+            key=lambda entity: (
+                entity["geometry"]["y"],
+                entity["center"]["x"] if entity["center"] else 0,
+                entity["id"],
+            ),
+        )
+    return sorted(
+        entities,
+        key=lambda entity: (
+            -(entity["center"]["y"] if entity["center"] else 0),
+            entity["geometry"]["y"] if entity["geometry"] else 0,
+            entity["id"],
+        ),
+    )
+
+
+def _selection_reference_candidates(
+    canvas_state: dict,
+    entities: List[dict],
+    scope: str,
+) -> List[dict]:
+    selected_entities = _entities_by_ids(entities, canvas_state["selection"])
+    if scope == "objects":
+        return [entity for entity in selected_entities if entity["collection"] == "objects"]
+    if scope == "frames":
+        return [entity for entity in selected_entities if entity["collection"] == "frames"]
+    if scope == "connectors":
+        return [entity for entity in selected_entities if entity["collection"] == "connectors"]
+    if scope == "text-labels":
+        return [
+            entity
+            for entity in selected_entities
+            if entity["collection"] == "objects" and entity["type"] == "text-label"
+        ]
+    return selected_entities
+
+
+def _selection_centroid(
+    canvas_state: dict,
+    entities: List[dict],
+) -> Optional[dict]:
+    selected_entities = [
+        entity
+        for entity in _entities_by_ids(entities, canvas_state["selection"])
+        if entity["center"] is not None
+    ]
+    if not selected_entities:
+        return None
+
+    count = len(selected_entities)
+    return {
+        "x": sum(entity["center"]["x"] for entity in selected_entities) / count,
+        "y": sum(entity["center"]["y"] for entity in selected_entities) / count,
+    }
+
+
+def resolve_action_references(subgoal: str, canvas_state: dict) -> dict:
+    entities = _iter_resolvable_entities(canvas_state)
+    resolution_log = []
+
+    for match in SELECTION_REFERENCE_RE.finditer(subgoal):
+        surface_text = match.group(0)
+        if surface_text.lower() == "current selection":
+            scope = "selection"
+            plural_reference = True
+        else:
+            scope = _scope_from_kind_term(match.group("kind"))
+            plural_reference = _is_plural_reference(match.group("kind"), surface_text)
+
+        candidate_entities = _selection_reference_candidates(
+            canvas_state,
+            entities,
+            scope,
+        )
+        candidate_ids = [entity["id"] for entity in candidate_entities]
+
+        if not candidate_ids:
+            resolution_log.append(
+                _reference_record(
+                    surface_text=surface_text,
+                    rule="selection",
+                    candidate_ids=[],
+                    status="unresolved",
+                    entity_scope=scope,
+                    reason="Current selection did not contain matching entities.",
+                )
+            )
+            continue
+
+        status = "resolved"
+        reason = "Resolved from the current selection."
+        if len(candidate_ids) > 1 and not plural_reference:
+            status = "ambiguous"
+            reason = "Selection reference matched multiple entities for a singular phrase."
+
+        resolution_log.append(
+            _reference_record(
+                surface_text=surface_text,
+                rule="selection",
+                candidate_ids=candidate_ids,
+                status=status,
+                entity_scope=scope,
+                reason=reason,
+            )
+        )
+
+    for match in KEYWORD_REFERENCE_RE.finditer(subgoal):
+        surface_text = match.group(0)
+        scope = _scope_from_kind_term(match.group("kind"))
+        plural_reference = _is_plural_reference(match.group("kind"), surface_text)
+        candidate_entities = _match_keyword_entities(
+            entities,
+            scope,
+            match.group("keywords"),
+        )
+        candidate_ids = [entity["id"] for entity in candidate_entities]
+
+        if not candidate_ids:
+            resolution_log.append(
+                _reference_record(
+                    surface_text=surface_text,
+                    rule="keyword-match",
+                    candidate_ids=[],
+                    status="unresolved",
+                    entity_scope=scope,
+                    reason="No entity text matched the requested keywords.",
+                )
+            )
+            continue
+
+        status = "resolved"
+        reason = "Resolved by keyword matching against entity text."
+        if len(candidate_ids) > 1 and not plural_reference:
+            status = "ambiguous"
+            reason = "Keyword match found multiple candidates for a singular phrase."
+
+        resolution_log.append(
+            _reference_record(
+                surface_text=surface_text,
+                rule="keyword-match",
+                candidate_ids=candidate_ids,
+                status=status,
+                entity_scope=scope,
+                reason=reason,
+            )
+        )
+
+    for pattern_name, pattern in (
+        ("geometric", ABSOLUTE_GEOMETRY_RE),
+        ("geometric", RELATIVE_GEOMETRY_RE),
+    ):
+        for match in pattern.finditer(subgoal):
+            surface_text = match.group(0)
+            scope = _scope_from_kind_term(match.group("kind")) if match.groupdict().get("kind") else "objects"
+            candidate_entities = _entities_for_scope(entities, scope)
+
+            if not candidate_entities:
+                resolution_log.append(
+                    _reference_record(
+                        surface_text=surface_text,
+                        rule=pattern_name,
+                        candidate_ids=[],
+                        status="unresolved",
+                        entity_scope=scope,
+                        reason="No entities were available for this geometric filter.",
+                    )
+                )
+                continue
+
+            sorted_entities = _sort_entities_by_direction(
+                candidate_entities,
+                match.group("direction").lower(),
+            )
+            resolution_log.append(
+                _reference_record(
+                    surface_text=surface_text,
+                    rule=pattern_name,
+                    candidate_ids=[sorted_entities[0]["id"]],
+                    status="resolved",
+                    entity_scope=scope,
+                    reason="Resolved deterministically with a geometric ordering rule.",
+                )
+            )
+
+    for match in NEAREST_REFERENCE_RE.finditer(subgoal):
+        surface_text = match.group(0)
+        scope = _scope_from_kind_term(match.group("kind"))
+        candidate_entities = _entities_for_scope(entities, scope)
+
+        anchor_ids = []
+        anchor_source = None
+        anchor_point = None
+
+        for previous_reference in reversed(resolution_log):
+            if previous_reference["status"] == "resolved" and len(previous_reference["candidateIds"]) == 1:
+                anchor_ids = previous_reference["candidateIds"]
+                anchor_source = "prior-resolved-reference"
+                anchor_entity = _entities_by_ids(entities, anchor_ids)
+                if anchor_entity and anchor_entity[0]["center"] is not None:
+                    anchor_point = anchor_entity[0]["center"]
+                    break
+
+        if anchor_point is None:
+            anchor_point = _selection_centroid(canvas_state, entities)
+            if anchor_point is not None:
+                anchor_ids = list(canvas_state["selection"])
+                anchor_source = "selection-centroid"
+
+        if anchor_point is None:
+            resolution_log.append(
+                _reference_record(
+                    surface_text=surface_text,
+                    rule="nearest",
+                    candidate_ids=[],
+                    status="unresolved",
+                    entity_scope=scope,
+                    reason="Nearest reference had no deterministic anchor.",
+                )
+            )
+            continue
+
+        excluded_ids = set(anchor_ids)
+        candidate_entities = [
+            entity
+            for entity in candidate_entities
+            if entity["center"] is not None and entity["id"] not in excluded_ids
+        ]
+        if not candidate_entities:
+            resolution_log.append(
+                _reference_record(
+                    surface_text=surface_text,
+                    rule="nearest",
+                    candidate_ids=[],
+                    status="unresolved",
+                    entity_scope=scope,
+                    reason="No candidates remained after excluding anchor entities.",
+                    anchor_ids=anchor_ids,
+                    anchor_source=anchor_source,
+                )
+            )
+            continue
+
+        nearest_entity = sorted(
+            candidate_entities,
+            key=lambda entity: (
+                (entity["center"]["x"] - anchor_point["x"]) ** 2
+                + (entity["center"]["y"] - anchor_point["y"]) ** 2,
+                entity["geometry"]["x"] if entity["geometry"] else 0,
+                entity["geometry"]["y"] if entity["geometry"] else 0,
+                entity["id"],
+            ),
+        )[0]
+        resolution_log.append(
+            _reference_record(
+                surface_text=surface_text,
+                rule="nearest",
+                candidate_ids=[nearest_entity["id"]],
+                status="resolved",
+                entity_scope=scope,
+                reason="Resolved by nearest-neighbor search using Euclidean distance.",
+                anchor_ids=anchor_ids,
+                anchor_source=anchor_source,
+            )
+        )
+
+    return {
+        "resolvedReferences": [
+            record for record in resolution_log if record["status"] == "resolved"
+        ],
+        "ambiguousReferences": [
+            record for record in resolution_log if record["status"] == "ambiguous"
+        ],
+        "unresolvedReferences": [
+            record for record in resolution_log if record["status"] == "unresolved"
+        ],
+    }
+
+
 def _format_action_catalog_for_prompt() -> str:
     lines = []
     for action in get_action_catalog():
@@ -231,6 +731,31 @@ def _canvas_context_for_prompt(canvas_state: dict) -> str:
             f"AVAILABLE_NEW_CONNECTOR_IDS: {json.dumps(suggested_ids['connectors'])}",
             "CURRENT_CANVAS_STATE_JSON:",
             json.dumps(canvas_state, indent=2, sort_keys=True),
+        ]
+    )
+
+
+def _reference_context_for_prompt(reference_resolution: dict) -> str:
+    return "\n".join(
+        [
+            "RESOLVED_REFERENCES_JSON:",
+            json.dumps(
+                reference_resolution.get("resolvedReferences", []),
+                indent=2,
+                sort_keys=True,
+            ),
+            "AMBIGUOUS_REFERENCES_JSON:",
+            json.dumps(
+                reference_resolution.get("ambiguousReferences", []),
+                indent=2,
+                sort_keys=True,
+            ),
+            "UNRESOLVED_REFERENCES_JSON:",
+            json.dumps(
+                reference_resolution.get("unresolvedReferences", []),
+                indent=2,
+                sort_keys=True,
+            ),
         ]
     )
 
@@ -281,6 +806,8 @@ def build_action_system_prompt(canvas_state: dict) -> str:
             "- Every reference to an existing object, frame, or connector must use a valid ID from the current canvas state.",
             "- You may introduce a new ID only for Create.id or Connect.id, and it must be unused.",
             "- Prefer the provided available new IDs when creating objects, frames, or connectors.",
+            "- A deterministic reference resolver runs before you. Treat its resolved candidate IDs as grounding hints and do not override them with invented grounding.",
+            "- If a reference is ambiguous, stay within the listed candidate IDs. Do not fabricate a different existing object.",
             "- source, target, targets, parent_frame_id, and frame_id must refer to IDs that exist in the current canvas or are created earlier in the same action list.",
             "- Keep the action list minimal and valid against the current canvas state.",
             "",
@@ -289,11 +816,14 @@ def build_action_system_prompt(canvas_state: dict) -> str:
     )
 
 
-def build_action_user_prompt(subgoal: str) -> str:
+def build_action_user_prompt(subgoal: str, reference_resolution: dict) -> str:
     return "\n".join(
         [
             "Convert this single subgoal into atomic whiteboard actions:",
             subgoal,
+            "",
+            "Use the deterministic grounding output below when resolving references:",
+            _reference_context_for_prompt(reference_resolution),
         ]
     )
 
@@ -447,12 +977,21 @@ def plan_subgoals_with_llm(user_prompt: str, canvas_state: dict) -> dict:
 
 def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
     validated_canvas_state = resolve_canvas_state(canvas_state)
+    reference_resolution = resolve_action_references(
+        subgoal,
+        validated_canvas_state,
+    )
     response_payload = _call_openai_json(
         model=_get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL),
         schema_name="whiteboard_actions",
         response_schema=ACTION_RESPONSE_SCHEMA,
         system_prompt=build_action_system_prompt(validated_canvas_state),
-        user_prompt=build_action_user_prompt(subgoal),
+        user_prompt=build_action_user_prompt(subgoal, reference_resolution),
         max_output_tokens=1400,
     )
-    return validate_action_response(response_payload, validated_canvas_state)
+    validated_response = validate_action_response(
+        response_payload,
+        validated_canvas_state,
+    )
+    validated_response["referenceResolution"] = reference_resolution
+    return validated_response
