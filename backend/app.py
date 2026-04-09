@@ -1,88 +1,14 @@
 from copy import deepcopy
-from typing import Optional
 
 from flask import Flask, jsonify, request
 
-
-def empty_canvas_state() -> dict:
-    return {
-        "objects": [],
-        "frames": [],
-        "connectors": [],
-        "viewport": {"x": 0, "y": 0, "zoom": 1.0},
-        "selection": [],
-    }
-
-
-def _is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def validate_canvas_state(payload: object) -> Optional[str]:
-    if not isinstance(payload, dict):
-        return "Canvas state must be a JSON object."
-
-    for key in ("objects", "frames", "connectors", "selection"):
-        if not isinstance(payload.get(key), list):
-            return f"'{key}' must be a list."
-
-    viewport = payload.get("viewport")
-    if not isinstance(viewport, dict):
-        return "'viewport' must be an object."
-
-    for key in ("x", "y", "zoom"):
-        if not _is_number(viewport.get(key)):
-            return f"'viewport.{key}' must be numeric."
-
-    for index, item in enumerate(payload["objects"]):
-        if not isinstance(item, dict):
-            return f"'objects[{index}]' must be an object."
-        if not isinstance(item.get("id"), str) or not item["id"]:
-            return f"'objects[{index}].id' is required."
-        if not isinstance(item.get("type"), str) or not item["type"]:
-            return f"'objects[{index}].type' is required."
-        if not isinstance(item.get("content"), dict):
-            return f"'objects[{index}].content' must be an object."
-        geometry = item.get("geometry")
-        if not isinstance(geometry, dict):
-            return f"'objects[{index}].geometry' must be an object."
-        for key in ("x", "y", "w", "h"):
-            if not _is_number(geometry.get(key)):
-                return f"'objects[{index}].geometry.{key}' must be numeric."
-
-    for index, item in enumerate(payload["frames"]):
-        if not isinstance(item, dict):
-            return f"'frames[{index}]' must be an object."
-        if not isinstance(item.get("id"), str) or not item["id"]:
-            return f"'frames[{index}].id' is required."
-        if not isinstance(item.get("type"), str) or not item["type"]:
-            return f"'frames[{index}].type' is required."
-        if not isinstance(item.get("content"), dict):
-            return f"'frames[{index}].content' must be an object."
-        geometry = item.get("geometry")
-        if not isinstance(geometry, dict):
-            return f"'frames[{index}].geometry' must be an object."
-        for key in ("x", "y", "w", "h"):
-            if not _is_number(geometry.get(key)):
-                return f"'frames[{index}].geometry.{key}' must be numeric."
-
-    for index, item in enumerate(payload["connectors"]):
-        if not isinstance(item, dict):
-            return f"'connectors[{index}]' must be an object."
-        for key in ("id", "type", "source", "target"):
-            if not isinstance(item.get(key), str) or not item[key]:
-                return f"'connectors[{index}].{key}' is required."
-        if not isinstance(item.get("content"), dict):
-            return f"'connectors[{index}].content' must be an object."
-        geometry = item.get("geometry")
-        if geometry is not None and not isinstance(geometry, dict):
-            return f"'connectors[{index}].geometry' must be an object when provided."
-
-    for index, item in enumerate(payload["selection"]):
-        if not isinstance(item, str) or not item:
-            return f"'selection[{index}]' must be a non-empty string."
-
-    return None
+from canvas_actions import (
+    CanvasActionError,
+    execute_action_batch,
+    get_action_catalog,
+    validate_action_request,
+)
+from canvas_state import empty_canvas_state, validate_canvas_state
 
 
 def create_app() -> Flask:
@@ -131,6 +57,77 @@ def create_app() -> Flask:
                     "selection": len(payload["selection"]),
                 },
                 "canvasState": app.config["LATEST_CANVAS_STATE"],
+            }
+        )
+
+    @app.get("/api/action-schemas")
+    def get_action_schemas():
+        return jsonify(
+            {
+                "status": "ok",
+                "actions": get_action_catalog(),
+            }
+        )
+
+    @app.post("/api/canvas-actions")
+    def apply_canvas_actions():
+        payload = request.get_json(silent=True)
+        try:
+            validate_action_request(payload)
+        except CanvasActionError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+
+        validation_error = validate_canvas_state(app.config["LATEST_CANVAS_STATE"])
+        if validation_error:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Stored canvas state is invalid: {validation_error}",
+                    }
+                ),
+                500,
+            )
+
+        try:
+            execution_result = execute_action_batch(
+                app.config["LATEST_CANVAS_STATE"],
+                payload["actions"],
+            )
+        except CanvasActionError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+
+        dry_run = payload.get("dry_run", False)
+        if not dry_run:
+            app.config["LATEST_CANVAS_STATE"] = execution_result["canvas_state"]
+
+        return jsonify(
+            {
+                "status": "ok",
+                "message": f"Executed {len(payload['actions'])} action(s).",
+                "dryRun": dry_run,
+                "executionLog": execution_result["execution_log"],
+                "undoHandlers": [
+                    entry["undo_handler"]
+                    for entry in execution_result["executed_actions"]
+                ],
+                "canvasState": execution_result["canvas_state"],
             }
         )
 
