@@ -564,6 +564,7 @@ function Whiteboard() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [mode, setMode] = useState("select");
+  const [chatPrompt, setChatPrompt] = useState("");
   const [syncState, setSyncState] = useState({
     status: "idle",
     message: "Scene graph has not been sent yet.",
@@ -990,6 +991,10 @@ function Whiteboard() {
     }
   }
 
+  function handlePromptSubmit(event) {
+    event.preventDefault();
+  }
+
   useEffect(() => {
     function handleKeyDown(event) {
       if (isTextEditingTarget(event.target)) {
@@ -1198,6 +1203,20 @@ function Whiteboard() {
             Box-select with Shift-drag or multi-select with Cmd/Ctrl-click, then
             move the notes together or drop them into a frame.
           </p>
+        </Panel>
+
+        <Panel position="bottom-center" className="flow-panel prompt-panel">
+          <div className="section-label">Chat Prompt</div>
+          <form className="prompt-form" onSubmit={handlePromptSubmit}>
+            <input
+              type="text"
+              value={chatPrompt}
+              onChange={(event) => setChatPrompt(event.target.value)}
+              placeholder="Describe the next whiteboard action..."
+              aria-label="Chat prompt"
+            />
+            <button type="submit">Send</button>
+          </form>
         </Panel>
 
         <Panel position="bottom-right" className="flow-panel scene-panel">

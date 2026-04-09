@@ -37,7 +37,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -89,6 +90,11 @@ button {
 
 .scene-panel {
   width: min(460px, calc(100vw - 2rem));
+}
+
+.prompt-panel {
+  width: min(620px, calc(100vw - 2rem));
+  padding: 0.85rem 0.95rem;
 }
 
 .history-row {
@@ -256,6 +262,42 @@ button {
 .sync-status-error {
   background: rgba(182, 38, 70, 0.12);
   color: #8e2440;
+}
+
+.prompt-form {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.72rem;
+}
+
+.prompt-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(35, 49, 67, 0.12);
+  border-radius: 999px;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.88);
+  color: #203140;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.prompt-form input:focus {
+  border-color: rgba(198, 99, 43, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 4px rgba(198, 99, 43, 0.1);
+}
+
+.prompt-form button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.82rem 1.05rem;
+  background: #24374c;
+  color: #fdf8ef;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .scene-preview {
@@ -481,7 +523,8 @@ button {
 
   .toolbar-panel,
   .status-panel,
-  .scene-panel {
+  .scene-panel,
+  .prompt-panel {
     width: min(280px, calc(100vw - 1rem));
   }
 
@@ -495,5 +538,10 @@ button {
 
   .button-row button {
     padding: 0.64rem 0.86rem;
+  }
+
+  .prompt-form {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
