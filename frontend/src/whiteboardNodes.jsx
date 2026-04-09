@@ -12,7 +12,11 @@ function NodeHandles() {
   );
 }
 
-export const StickyNoteNode = memo(function StickyNoteNode({ data, selected }) {
+export const StickyNoteNode = memo(function StickyNoteNode({
+  id,
+  data,
+  selected,
+}) {
   return (
     <div className="whiteboard-node whiteboard-node-sticky">
       <NodeResizer
@@ -21,6 +25,8 @@ export const StickyNoteNode = memo(function StickyNoteNode({ data, selected }) {
         minHeight={130}
         lineClassName="node-resizer-line"
         handleClassName="node-resizer-handle"
+        onResizeStart={() => data.onResizeStart?.(id)}
+        onResizeEnd={() => data.onResizeEnd?.(id)}
       />
       <NodeHandles />
       <div className="node-meta">Sticky note</div>
@@ -29,7 +35,11 @@ export const StickyNoteNode = memo(function StickyNoteNode({ data, selected }) {
   );
 });
 
-export const TextLabelNode = memo(function TextLabelNode({ data, selected }) {
+export const TextLabelNode = memo(function TextLabelNode({
+  id,
+  data,
+  selected,
+}) {
   return (
     <div className="whiteboard-node whiteboard-node-text">
       <NodeResizer
@@ -38,6 +48,8 @@ export const TextLabelNode = memo(function TextLabelNode({ data, selected }) {
         minHeight={58}
         lineClassName="node-resizer-line"
         handleClassName="node-resizer-handle"
+        onResizeStart={() => data.onResizeStart?.(id)}
+        onResizeEnd={() => data.onResizeEnd?.(id)}
       />
       <NodeHandles />
       <div className="text-label-copy">{data.label}</div>
@@ -45,15 +57,21 @@ export const TextLabelNode = memo(function TextLabelNode({ data, selected }) {
   );
 });
 
-export const FrameNode = memo(function FrameNode({ data, selected }) {
+export const FrameNode = memo(function FrameNode({ id, data, selected }) {
   return (
-    <div className="whiteboard-node whiteboard-node-frame">
+    <div
+      className={`whiteboard-node whiteboard-node-frame${
+        data.isDropTarget ? " is-drop-target" : ""
+      }`}
+    >
       <NodeResizer
         isVisible={selected}
         minWidth={240}
         minHeight={180}
         lineClassName="node-resizer-line"
         handleClassName="node-resizer-handle"
+        onResizeStart={() => data.onResizeStart?.(id)}
+        onResizeEnd={() => data.onResizeEnd?.(id)}
       />
       <NodeHandles />
       <div className="frame-node-header">

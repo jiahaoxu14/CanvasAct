@@ -87,6 +87,14 @@ button {
   width: min(430px, calc(100vw - 2rem));
 }
 
+.scene-panel {
+  width: min(460px, calc(100vw - 2rem));
+}
+
+.history-row {
+  margin-top: 0.55rem;
+}
+
 .panel-kicker,
 .section-label {
   text-transform: uppercase;
@@ -213,6 +221,57 @@ button {
   letter-spacing: 0.12em;
 }
 
+.scene-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.sync-status {
+  margin-top: 0.8rem;
+  padding: 0.7rem 0.82rem;
+  border-radius: 16px;
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.sync-status-idle {
+  background: rgba(36, 55, 76, 0.06);
+  color: #33485d;
+}
+
+.sync-status-sending {
+  background: rgba(198, 99, 43, 0.12);
+  color: var(--accent-deep);
+}
+
+.sync-status-success {
+  background: rgba(39, 128, 91, 0.12);
+  color: #1d6c4c;
+}
+
+.sync-status-error {
+  background: rgba(182, 38, 70, 0.12);
+  color: #8e2440;
+}
+
+.scene-preview {
+  margin: 0.9rem 0 0;
+  max-height: 340px;
+  overflow: auto;
+  border-radius: 18px;
+  padding: 0.9rem;
+  background: rgba(27, 40, 58, 0.94);
+  color: #edf5ff;
+  font-family: "SFMono-Regular", "SF Mono", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
 .whiteboard-shell .react-flow__selection {
   border: 1px solid rgba(50, 72, 100, 0.24);
   background: rgba(85, 124, 174, 0.06);
@@ -277,6 +336,16 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 24px 40px rgba(26, 40, 59, 0.08);
+}
+
+.whiteboard-node-frame.is-drop-target {
+  border-color: rgba(198, 99, 43, 0.88);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 230, 0.72), rgba(250, 234, 208, 0.3));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 0 0 3px rgba(198, 99, 43, 0.12),
+    0 24px 40px rgba(26, 40, 59, 0.12);
 }
 
 .whiteboard-node-frame::after {
@@ -411,7 +480,8 @@ button {
   }
 
   .toolbar-panel,
-  .status-panel {
+  .status-panel,
+  .scene-panel {
     width: min(280px, calc(100vw - 1rem));
   }
 
