@@ -394,6 +394,19 @@ function describeLayoutAdjustmentSummary(layoutAdjustments) {
   return `Auto-arranged ${count} object(s) for cleaner spacing and alignment.`;
 }
 
+function describeChecklistFailure(unmetCriteria) {
+  if (!Array.isArray(unmetCriteria) || !unmetCriteria.length) {
+    return "";
+  }
+
+  const [first] = unmetCriteria;
+  if (unmetCriteria.length === 1) {
+    return `Checklist unmet: ${first.criterion}.`;
+  }
+
+  return `Checklist unmet: ${first.criterion}, plus ${unmetCriteria.length - 1} more item(s).`;
+}
+
 function getActionReferenceIds(action) {
   const ids = new Set();
 
@@ -616,13 +629,17 @@ function Whiteboard() {
         })),
       ])
     : [];
-  const latestExecutedAiEntry = actionHistory.find(
-    (entry) => entry.status === "executed" && !entry.undone,
+  const latestCommittedAiEntry = actionHistory.find(
+    (entry) =>
+      !entry.undone &&
+      !!entry.canvasStateAfter &&
+      (entry.status === "executed" ||
+        (entry.status === "failed" && entry.actionCount > 0)),
   );
   const canUndoLastAiAction =
-    !!latestExecutedAiEntry &&
+    !!latestCommittedAiEntry &&
     !isExecuting &&
-    sceneGraphSignature === JSON.stringify(latestExecutedAiEntry.canvasStateAfter);
+    sceneGraphSignature === JSON.stringify(latestCommittedAiEntry.canvasStateAfter);
 
   function snapshotFromState(nextNodes = nodes, nextEdges = edges) {
     return createSnapshot(nextNodes, nextEdges, nextIdRef.current);
@@ -950,73 +967,178 @@ function Whiteboard() {
       return;
     }
 
-    let actions;
-    try {
-      actions = getPlannedActionsForExecution();
-    } catch (error) {
-      setPlannerState({
-        status: "error",
-        message: error.message,
-      });
-      return;
-    }
-
-    if (!actions.length) {
-      setPlannerState({
-        status: "error",
-        message: "Nothing to execute. The action list is empty.",
-      });
-      return;
-    }
-
     const beforeCanvasState = cloneSnapshotData(sceneGraph);
+
+    if (isEditingPlan) {
+      let actions;
+      try {
+        actions = getPlannedActionsForExecution();
+      } catch (error) {
+        setPlannerState({
+          status: "error",
+          message: error.message,
+        });
+        return;
+      }
+
+      if (!actions.length) {
+        setPlannerState({
+          status: "error",
+          message: "Nothing to execute. The action list is empty.",
+        });
+        return;
+      }
+
+      pushSnapshotToHistory(snapshotFromState());
+      setPlannerState({
+        status: "executing",
+        message: `Executing ${actions.length} edited action(s) without checklist refinement...`,
+      });
+
+      try {
+        const payload = await postJson(
+          "/api/canvas-actions",
+          {
+            actions,
+            canvasState: beforeCanvasState,
+            layoutPolicy: "no-overlap",
+          },
+          "Failed to execute atomic actions.",
+        );
+
+        applyCanvasState(payload.canvasState);
+        logAiHistory({
+          status: "executed",
+          prompt: planPreview.prompt,
+          parsedIntent: planPreview.parsedIntent,
+          subgoalCount: planPreview.steps.length,
+          actionCount: actions.length,
+          actions: cloneSnapshotData(actions),
+          canvasStateBefore: beforeCanvasState,
+          canvasStateAfter: cloneSnapshotData(payload.canvasState),
+          layoutPolicyApplied: payload.layoutPolicyApplied,
+          layoutAdjustments: cloneSnapshotData(payload.layoutAdjustments ?? []),
+        });
+        setPlanPreview(null);
+        setIsEditingPlan(false);
+        setEditedActionsJson("");
+        setHoveredReferenceIds([]);
+        setChatPrompt("");
+        setPlannerState({
+          status: "success",
+          message:
+            payload.layoutAdjustments?.length > 0
+              ? `Executed ${actions.length} action(s). ${describeLayoutAdjustmentSummary(payload.layoutAdjustments)}`
+              : `Executed ${actions.length} action(s). Review the action history to undo the AI batch if needed.`,
+        });
+
+        try {
+          await persistCanvasState(
+            payload.canvasState,
+            "Persisting executed AI result...",
+          );
+        } catch (error) {
+          setSyncState({
+            status: "error",
+            message: error.message,
+          });
+        }
+      } catch (error) {
+        logAiHistory({
+          status: "failed",
+          prompt: planPreview.prompt,
+          parsedIntent: planPreview.parsedIntent,
+          subgoalCount: planPreview.steps.length,
+          actionCount: actions.length,
+          actions: cloneSnapshotData(actions),
+          error: error.message,
+        });
+        setPlannerState({
+          status: "error",
+          message: error.message,
+        });
+      }
+      return;
+    }
+
     pushSnapshotToHistory(snapshotFromState());
     setPlannerState({
       status: "executing",
-      message: `Executing ${actions.length} atomic action(s)...`,
+      message: `Executing ${planPreview.steps.length} subgoal(s) with checklist verification...`,
     });
 
     try {
       const payload = await postJson(
-        "/api/canvas-actions",
+        "/api/llm/execute-plan",
         {
-          actions,
           canvasState: beforeCanvasState,
           layoutPolicy: "no-overlap",
+          steps: planPreview.steps.map((step) => ({
+            subgoal: step.subgoal,
+            successCriteria: step.successCriteria,
+            actions: step.actions,
+            referenceResolution: step.referenceResolution,
+            failureLog: step.failureLog,
+          })),
         },
-        "Failed to execute atomic actions.",
+        "Failed to execute AI plan.",
       );
+
+      const stepReports = payload.stepReports ?? [];
+      const nextPlanPreview = {
+        ...planPreview,
+        steps: planPreview.steps.map((step, index) => ({
+          ...step,
+          executionReport: stepReports[index] ?? null,
+        })),
+      };
+      const committedActions = payload.committedActions ?? [];
 
       applyCanvasState(payload.canvasState);
       logAiHistory({
-        status: "executed",
+        status: payload.status === "partial_failure" ? "failed" : "executed",
         prompt: planPreview.prompt,
         parsedIntent: planPreview.parsedIntent,
         subgoalCount: planPreview.steps.length,
-        actionCount: actions.length,
-        actions: cloneSnapshotData(actions),
+        completedStepCount: payload.completedStepCount ?? 0,
+        actionCount: committedActions.length,
+        actions: cloneSnapshotData(committedActions),
         canvasStateBefore: beforeCanvasState,
         canvasStateAfter: cloneSnapshotData(payload.canvasState),
         layoutPolicyApplied: payload.layoutPolicyApplied,
         layoutAdjustments: cloneSnapshotData(payload.layoutAdjustments ?? []),
+        stepReports: cloneSnapshotData(stepReports),
+        error: payload.status === "partial_failure" ? payload.message : null,
       });
-      setPlanPreview(null);
+
       setIsEditingPlan(false);
       setEditedActionsJson("");
       setHoveredReferenceIds([]);
       setChatPrompt("");
-      setPlannerState({
-        status: "success",
-        message:
-          payload.layoutAdjustments?.length > 0
-            ? `Executed ${actions.length} action(s). ${describeLayoutAdjustmentSummary(payload.layoutAdjustments)}`
-            : `Executed ${actions.length} action(s). Review the action history to undo the AI batch if needed.`,
-      });
+
+      if (payload.status === "partial_failure") {
+        setPlanPreview(nextPlanPreview);
+        setPlannerState({
+          status: "error",
+          message: payload.message,
+        });
+      } else {
+        setPlanPreview(null);
+        setPlannerState({
+          status: "success",
+          message:
+            payload.layoutAdjustments?.length > 0
+              ? `Executed ${committedActions.length} action(s) across ${payload.completedStepCount} subgoal(s). ${describeLayoutAdjustmentSummary(payload.layoutAdjustments)}`
+              : `Executed ${committedActions.length} action(s) across ${payload.completedStepCount} subgoal(s). Review the action history to undo the AI batch if needed.`,
+        });
+      }
 
       try {
         await persistCanvasState(
           payload.canvasState,
-          "Persisting executed AI result...",
+          payload.status === "partial_failure"
+            ? "Persisting partial AI result..."
+            : "Persisting executed AI result...",
         );
       } catch (error) {
         setSyncState({
@@ -1030,8 +1152,8 @@ function Whiteboard() {
         prompt: planPreview.prompt,
         parsedIntent: planPreview.parsedIntent,
         subgoalCount: planPreview.steps.length,
-        actionCount: actions.length,
-        actions: cloneSnapshotData(actions),
+        actionCount: 0,
+        actions: [],
         error: error.message,
       });
       setPlannerState({
@@ -1042,21 +1164,21 @@ function Whiteboard() {
   }
 
   async function undoLastAiAction() {
-    if (!latestExecutedAiEntry || !canUndoLastAiAction) {
+    if (!latestCommittedAiEntry || !canUndoLastAiAction) {
       return;
     }
 
     pushSnapshotToHistory(snapshotFromState());
     setPlannerState({
       status: "executing",
-      message: `Undoing AI batch from ${latestExecutedAiEntry.timestamp}...`,
+      message: `Undoing AI batch from ${latestCommittedAiEntry.timestamp}...`,
     });
 
     try {
-      applyCanvasState(latestExecutedAiEntry.canvasStateBefore);
+      applyCanvasState(latestCommittedAiEntry.canvasStateBefore);
       setActionHistory((current) =>
         current.map((entry) =>
-          entry.id === latestExecutedAiEntry.id
+          entry.id === latestCommittedAiEntry.id
             ? {
                 ...entry,
                 undone: true,
@@ -1066,12 +1188,12 @@ function Whiteboard() {
       );
       setPlannerState({
         status: "success",
-        message: "Undid the last executed AI batch.",
+        message: "Undid the last AI batch.",
       });
 
       try {
         await persistCanvasState(
-          latestExecutedAiEntry.canvasStateBefore,
+          latestCommittedAiEntry.canvasStateBefore,
           "Persisting AI undo...",
         );
       } catch (error) {
@@ -1126,6 +1248,7 @@ function Whiteboard() {
           "/api/llm/actions",
           {
             subgoal: subgoalEntry.subgoal,
+            successCriteria: subgoalEntry.successCriteria,
             canvasState: workingCanvasState,
           },
           "Failed to generate atomic actions.",
@@ -1145,12 +1268,14 @@ function Whiteboard() {
         steps.push({
           id: `plan-step-${index + 1}`,
           subgoal: subgoalEntry.subgoal,
+          successCriteria: subgoalEntry.successCriteria ?? [],
           actions: actionPayload.actions,
           referenceResolution:
             actionPayload.referenceResolution ?? emptyReferenceResolution,
           failureLog: actionPayload.failureLog ?? [],
           layoutPolicyApplied: simulationPayload.layoutPolicyApplied,
           layoutAdjustments: simulationPayload.layoutAdjustments ?? [],
+          executionReport: null,
         });
         workingCanvasState = simulationPayload.canvasState;
       }
@@ -1534,6 +1659,9 @@ function Whiteboard() {
                   <div className="history-entry-copy">{entry.prompt}</div>
                   <div className="history-entry-meta">
                     <span>{entry.subgoalCount} subgoal(s)</span>
+                    {typeof entry.completedStepCount === "number" ? (
+                      <span>{entry.completedStepCount} completed</span>
+                    ) : null}
                     <span>{entry.actionCount} action(s)</span>
                     {entry.undone ? <span>undone</span> : null}
                   </div>
@@ -1629,6 +1757,19 @@ function Whiteboard() {
                       </div>
                       <div className="plan-step-copy">{step.subgoal}</div>
 
+                      {step.successCriteria?.length ? (
+                        <div className="criteria-list">
+                          {step.successCriteria.map((criterion, criterionIndex) => (
+                            <div
+                              key={`${step.id}-criterion-${criterionIndex}`}
+                              className="criteria-item"
+                            >
+                              {criterion}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
                       {step.referenceResolution.ambiguousReferences.length > 0 ? (
                         <div className="plan-step-warning">
                           Ambiguous references:{" "}
@@ -1641,6 +1782,35 @@ function Whiteboard() {
                       {step.layoutAdjustments?.length ? (
                         <div className="plan-step-note">
                           {describeLayoutAdjustmentSummary(step.layoutAdjustments)}
+                        </div>
+                      ) : null}
+
+                      {step.executionReport?.status === "completed" ? (
+                        <div className="plan-step-note">
+                          Completed in {step.executionReport.attemptCount} attempt(s).
+                        </div>
+                      ) : null}
+
+                      {step.executionReport?.status === "failed" ? (
+                        <div className="plan-step-warning">
+                          Failed after {step.executionReport.attemptCount} attempt(s).{" "}
+                          {describeChecklistFailure(step.executionReport.unmetCriteria)}
+                        </div>
+                      ) : null}
+
+                      {step.executionReport?.unmetCriteria?.length ? (
+                        <div className="criteria-results">
+                          {step.executionReport.unmetCriteria.map((entry, entryIndex) => (
+                            <div
+                              key={`${step.id}-unmet-${entryIndex}`}
+                              className="criteria-result criteria-result-failed"
+                            >
+                              <span className="mode-pill">Failed</span>
+                              <span>
+                                {entry.criterion}: {entry.rationale}
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       ) : null}
 
@@ -1691,6 +1861,10 @@ function Whiteboard() {
               {isEditingPlan ? (
                 <section className="panel-section">
                   <div className="section-label">Editable Actions</div>
+                  <p className="plan-step-warning">
+                    Edited JSON bypasses checklist verification and refinement. It
+                    executes exactly as written.
+                  </p>
                   <textarea
                     className="plan-editor"
                     value={editedActionsJson}

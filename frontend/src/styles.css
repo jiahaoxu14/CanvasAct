@@ -361,6 +361,36 @@ code {
   font-weight: 700;
 }
 
+.criteria-list,
+.criteria-results {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.criteria-item,
+.criteria-result {
+  padding: 0.62rem 0.72rem;
+  border-radius: 14px;
+  background: rgba(255, 248, 239, 0.92);
+  border: 1px solid rgba(198, 99, 43, 0.12);
+  color: #384a5d;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.criteria-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.criteria-result-failed {
+  background: rgba(255, 242, 246, 0.82);
+  border-color: rgba(182, 38, 70, 0.14);
+}
+
 .action-list,
 .history-entry-actions {
   margin-top: 0.75rem;

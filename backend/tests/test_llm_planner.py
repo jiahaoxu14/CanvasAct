@@ -22,12 +22,17 @@ from llm_planner import (
     build_action_repair_prompt,
     build_action_system_prompt,
     build_action_user_prompt,
+    build_checklist_evaluator_user_prompt,
     build_subgoal_system_prompt,
     build_subgoal_user_prompt,
+    empty_reference_resolution,
+    evaluate_subgoal_success,
+    execute_plan_with_llm,
     plan_actions_with_llm,
     plan_subgoals_with_llm,
     resolve_action_references,
     validate_action_response,
+    validate_execute_plan_request,
     validate_subgoal_response,
 )
 
@@ -145,10 +150,12 @@ class PromptContractTests(unittest.TestCase):
             "Group these notes into themes and make a simple pipeline."
         )
 
-        self.assertIn("Prompt 1 returns subgoals only.", prompt)
+        self.assertIn("Prompt 1 returns subgoals and successCriteria only.", prompt)
         self.assertIn("Allowed action set:", prompt)
         self.assertIn("Create", prompt)
         self.assertIn("Delete", prompt)
+        self.assertIn("successCriteria", prompt)
+        self.assertIn('Exists sticky-note containing "..."', prompt)
         self.assertIn("Never invent nonexistent objects, connectors, or IDs.", prompt)
         self.assertNotIn("GroupIntoFrame", prompt)
         self.assertNotIn("frames", prompt)
@@ -174,6 +181,7 @@ class PromptContractTests(unittest.TestCase):
                 "unresolvedReferences": [],
             },
             sample_canvas_state(),
+            ['Exists sticky-note containing "Theme"'],
         )
 
         self.assertIn("Prompt 2 returns atomic actions only.", prompt)
@@ -193,6 +201,7 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("Reduce connector crossings", prompt)
         self.assertNotIn("frame", prompt.lower())
         self.assertIn("Convert this single subgoal into atomic whiteboard actions:", user_prompt)
+        self.assertIn("SUCCESS_CRITERIA_JSON", user_prompt)
         self.assertIn('"candidateIds": [', user_prompt)
         self.assertIn('"n1"', user_prompt)
         self.assertIn("AMBIGUOUS_REFERENCES_JSON", user_prompt)
@@ -206,6 +215,7 @@ class PromptContractTests(unittest.TestCase):
                 "unresolvedReferences": [],
             },
             sample_canvas_state(),
+            ['Exists connector from "collect papers" to "evaluation checklist"'],
             previous_actions=[
                 {
                     "op": "Connect",
@@ -232,6 +242,7 @@ class PromptContractTests(unittest.TestCase):
         )
 
         self.assertIn("Repair the previous atomic whiteboard action plan.", prompt)
+        self.assertIn("SUCCESS_CRITERIA_JSON:", prompt)
         self.assertIn("VALIDATION_ERROR:", prompt)
         self.assertIn("FAILURE_LOG_JSON:", prompt)
         self.assertIn("PREVIOUS_INVALID_ACTIONS_JSON:", prompt)
@@ -248,6 +259,7 @@ class PromptContractTests(unittest.TestCase):
                 "unresolvedReferences": [],
             },
             sample_canvas_state(),
+            ['Count sticky-note >= 3'],
             previous_actions=[
                 {
                     "op": "Move",
@@ -273,6 +285,18 @@ class PromptContractTests(unittest.TestCase):
             prompt,
         )
         self.assertIn("STRUCTURED_ERROR_JSON:", prompt)
+
+    def test_checklist_evaluator_prompt_includes_before_after_states(self):
+        prompt = build_checklist_evaluator_user_prompt(
+            "group notes into themes",
+            [{"index": 0, "criterion": 'Exists text-label containing "Theme"'}],
+            sample_canvas_state(),
+            sample_canvas_state(),
+        )
+
+        self.assertIn("CRITERIA_TO_EVALUATE_JSON:", prompt)
+        self.assertIn("BEFORE_CANVAS_STATE_JSON:", prompt)
+        self.assertIn("AFTER_CANVAS_STATE_JSON:", prompt)
 
 
 class RuleRegistryTests(unittest.TestCase):
@@ -381,11 +405,17 @@ class RuleRegistryTests(unittest.TestCase):
 
 
 class PlannerValidationTests(unittest.TestCase):
-    def test_validate_subgoal_response_accepts_subgoals_only_shape(self):
+    def test_validate_subgoal_response_accepts_subgoals_with_success_criteria(self):
         payload = {
             "subgoals": [
-                {"subgoal": "cluster selected notes into themes"},
-                {"subgoal": "create a title for each cluster"},
+                {
+                    "subgoal": "cluster selected notes into themes",
+                    "successCriteria": ['Count text-label >= 1'],
+                },
+                {
+                    "subgoal": "create a title for each cluster",
+                    "successCriteria": ['Exists text-label containing "Theme"'],
+                },
             ]
         }
 
@@ -393,6 +423,31 @@ class PlannerValidationTests(unittest.TestCase):
         self.assertEqual(
             validated["subgoals"][0]["subgoal"],
             "cluster selected notes into themes",
+        )
+        self.assertEqual(
+            validated["subgoals"][0]["successCriteria"],
+            ['Count text-label >= 1'],
+        )
+
+    def test_validate_execute_plan_request_accepts_checklist_steps(self):
+        validate_execute_plan_request(
+            {
+                "canvasState": sample_canvas_state(),
+                "layoutPolicy": "no-overlap",
+                "steps": [
+                    {
+                        "subgoal": "create a heading",
+                        "successCriteria": ['Exists text-label containing "Methods"'],
+                        "actions": [
+                            {
+                                "op": "Annotate",
+                                "target": "n4",
+                                "text": "Methods",
+                            }
+                        ],
+                    }
+                ],
+            }
         )
 
     def test_validate_action_response_rejects_nonexistent_ids(self):
@@ -590,8 +645,14 @@ class PlannerExecutionTests(unittest.TestCase):
     def test_plan_subgoals_uses_model_response(self, mock_call):
         mock_call.return_value = {
             "subgoals": [
-                {"subgoal": "cluster selected notes into themes"},
-                {"subgoal": "connect clusters from left to right"},
+                {
+                    "subgoal": "cluster selected notes into themes",
+                    "successCriteria": ['Count text-label >= 1'],
+                },
+                {
+                    "subgoal": "connect clusters from left to right",
+                    "successCriteria": ['Exists connector from "collect papers" to "evaluation checklist"'],
+                },
             ]
         }
 
@@ -604,6 +665,10 @@ class PlannerExecutionTests(unittest.TestCase):
         self.assertEqual(
             result["subgoals"][1]["subgoal"],
             "connect clusters from left to right",
+        )
+        self.assertEqual(
+            result["subgoals"][1]["successCriteria"],
+            ['Exists connector from "collect papers" to "evaluation checklist"'],
         )
 
     @patch("llm_planner._call_openai_structured_json")
@@ -656,6 +721,7 @@ class PlannerExecutionTests(unittest.TestCase):
         result = plan_actions_with_llm(
             "move these notes to the right",
             sample_canvas_state(),
+            success_criteria=['"collect papers" is left of "evaluation checklist"'],
         )
 
         self.assertEqual(result["actions"][0]["targets"], ["n1", "n2"])
@@ -712,11 +778,228 @@ class PlannerExecutionTests(unittest.TestCase):
         result = plan_actions_with_llm(
             "move the selected note to the right",
             sample_canvas_state(),
+            success_criteria=['Selected sticky-note containing "collect papers"'],
         )
 
         self.assertEqual(result["actions"][0]["delta"], {"dx": 80, "dy": 0})
         self.assertEqual(len(result["failureLog"]), 1)
         self.assertIn("$.delta is required", result["failureLog"][0]["error"])
+
+    def test_evaluate_subgoal_success_uses_deterministic_checks(self):
+        result = evaluate_subgoal_success(
+            "title the cluster",
+            [
+                'Exists sticky-note containing "collect papers"',
+                '"collect papers" is left of "evaluation checklist"',
+            ],
+            sample_canvas_state(),
+            sample_canvas_state(),
+        )
+
+        self.assertEqual(result["status"], "passed")
+        self.assertTrue(
+            all(item["verifier"] == "deterministic" for item in result["criteriaResults"])
+        )
+
+    @patch("llm_planner._call_openai_structured_json")
+    def test_evaluate_subgoal_success_falls_back_to_llm_for_semantic_criteria(
+        self,
+        mock_call,
+    ):
+        mock_call.return_value = {
+            "criteriaResults": [
+                {
+                    "index": 0,
+                    "criterion": "The notes are grouped into clear themes.",
+                    "status": "passed",
+                    "rationale": "The after-state shows distinct themed clusters.",
+                }
+            ]
+        }
+
+        result = evaluate_subgoal_success(
+            "group notes into themes",
+            ["The notes are grouped into clear themes."],
+            sample_canvas_state(),
+            sample_canvas_state(),
+        )
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["criteriaResults"][0]["verifier"], "llm")
+
+
+class PlanExecutionLoopTests(unittest.TestCase):
+    @patch("llm_planner.plan_actions_with_llm")
+    def test_execute_plan_retries_failed_checklist_until_it_passes(self, mock_plan_actions):
+        mock_plan_actions.return_value = {
+            "actions": [
+                {
+                    "op": "Create",
+                    "id": "node-1",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 120, "y": 120, "w": 180, "h": 100},
+                    "text": "Final",
+                }
+            ],
+            "referenceResolution": empty_reference_resolution(),
+            "failureLog": [],
+        }
+
+        result = execute_plan_with_llm(
+            [
+                {
+                    "subgoal": "create the final note",
+                    "successCriteria": ['Exists sticky-note containing "Final"'],
+                    "actions": [
+                        {
+                            "op": "Create",
+                            "id": "node-1",
+                            "object_type": "sticky-note",
+                            "geometry": {"x": 120, "y": 120, "w": 180, "h": 100},
+                            "text": "Draft",
+                        }
+                    ],
+                }
+            ],
+            blank_canvas_state(),
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["stepReports"][0]["attemptCount"], 2)
+        created = next(
+            item for item in result["canvasState"]["objects"] if item["id"] == "node-1"
+        )
+        self.assertEqual(created["content"]["text"], "Final")
+
+    @patch("llm_planner.plan_actions_with_llm")
+    def test_execute_plan_stops_after_retry_limit_and_keeps_prior_steps(self, mock_plan_actions):
+        mock_plan_actions.return_value = {
+            "actions": [
+                {
+                    "op": "Create",
+                    "id": "node-2",
+                    "object_type": "sticky-note",
+                    "geometry": {"x": 360, "y": 120, "w": 180, "h": 100},
+                    "text": "Draft",
+                }
+            ],
+            "referenceResolution": empty_reference_resolution(),
+            "failureLog": [],
+        }
+
+        result = execute_plan_with_llm(
+            [
+                {
+                    "subgoal": "create alpha",
+                    "successCriteria": ['Exists sticky-note containing "Alpha"'],
+                    "actions": [
+                        {
+                            "op": "Create",
+                            "id": "node-1",
+                            "object_type": "sticky-note",
+                            "geometry": {"x": 120, "y": 120, "w": 180, "h": 100},
+                            "text": "Alpha",
+                        }
+                    ],
+                },
+                {
+                    "subgoal": "create final note",
+                    "successCriteria": ['Exists sticky-note containing "Final"'],
+                    "actions": [
+                        {
+                            "op": "Create",
+                            "id": "node-2",
+                            "object_type": "sticky-note",
+                            "geometry": {"x": 360, "y": 120, "w": 180, "h": 100},
+                            "text": "Draft",
+                        }
+                    ],
+                },
+            ],
+            blank_canvas_state(),
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["status"], "partial_failure")
+        self.assertEqual(result["completedStepCount"], 1)
+        object_texts = sorted(
+            item["content"]["text"] for item in result["canvasState"]["objects"]
+        )
+        self.assertEqual(object_texts, ["Alpha"])
+        self.assertEqual(result["stepReports"][1]["status"], "failed")
+
+    @patch("llm_planner.plan_actions_with_llm")
+    def test_execute_plan_replans_with_canvas_state_from_prior_successful_steps(
+        self,
+        mock_plan_actions,
+    ):
+        def _replan(subgoal, canvas_state, success_criteria=None, retry_context=None):
+            texts = [item["content"]["text"] for item in canvas_state["objects"]]
+            self.assertIn("Alpha", texts)
+            self.assertEqual(
+                success_criteria,
+                ['Exists connector from "Alpha" to "Beta"'],
+            )
+            self.assertIsNotNone(retry_context)
+            return {
+                "actions": [
+                    {
+                        "op": "Create",
+                        "id": "node-2",
+                        "object_type": "sticky-note",
+                        "geometry": {"x": 360, "y": 120, "w": 180, "h": 100},
+                        "text": "Beta",
+                    },
+                    {
+                        "op": "Connect",
+                        "id": "edge-1",
+                        "source": "node-1",
+                        "target": "node-2",
+                    },
+                ],
+                "referenceResolution": empty_reference_resolution(),
+                "failureLog": [],
+            }
+
+        mock_plan_actions.side_effect = _replan
+
+        result = execute_plan_with_llm(
+            [
+                {
+                    "subgoal": "create alpha",
+                    "successCriteria": ['Exists sticky-note containing "Alpha"'],
+                    "actions": [
+                        {
+                            "op": "Create",
+                            "id": "node-1",
+                            "object_type": "sticky-note",
+                            "geometry": {"x": 120, "y": 120, "w": 180, "h": 100},
+                            "text": "Alpha",
+                        }
+                    ],
+                },
+                {
+                    "subgoal": "connect alpha to beta",
+                    "successCriteria": ['Exists connector from "Alpha" to "Beta"'],
+                    "actions": [
+                        {
+                            "op": "Create",
+                            "id": "node-2",
+                            "object_type": "sticky-note",
+                            "geometry": {"x": 360, "y": 120, "w": 180, "h": 100},
+                            "text": "Beta",
+                        }
+                    ],
+                },
+            ],
+            blank_canvas_state(),
+            layout_policy="no-overlap",
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["stepReports"][1]["attemptCount"], 2)
+        self.assertEqual(len(result["canvasState"]["connectors"]), 1)
 
 
 class ExecutorBehaviorTests(unittest.TestCase):
@@ -1176,6 +1459,32 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["errorDetails"]["entityId"], "missing-id")
         self.assertIn("repairHint", payload)
 
+    @patch("app.plan_subgoals_with_llm")
+    def test_llm_subgoals_endpoint_returns_success_criteria(self, mock_plan):
+        mock_plan.return_value = {
+            "subgoals": [
+                {
+                    "subgoal": "title the methods cluster",
+                    "successCriteria": ['Exists text-label containing "Methods"'],
+                }
+            ]
+        }
+
+        response = self.client.post(
+            "/api/llm/subgoals",
+            json={
+                "prompt": "group these notes into themes",
+                "canvasState": sample_canvas_state(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            payload["subgoals"][0]["successCriteria"],
+            ['Exists text-label containing "Methods"'],
+        )
+
     @patch("app.plan_actions_with_llm")
     def test_llm_actions_endpoint_returns_actions_and_reference_resolution(self, mock_plan):
         mock_plan.return_value = {
@@ -1206,6 +1515,7 @@ class ApiTests(unittest.TestCase):
             "/api/llm/actions",
             json={
                 "subgoal": "select these notes",
+                "successCriteria": ['Selected sticky-note containing "collect papers"'],
                 "canvasState": sample_canvas_state(),
             },
         )
@@ -1217,6 +1527,66 @@ class ApiTests(unittest.TestCase):
             payload["referenceResolution"]["resolvedReferences"][0]["candidateIds"],
             ["n1", "n2"],
         )
+
+    @patch("app.execute_plan_with_llm")
+    def test_llm_execute_plan_endpoint_returns_step_reports(self, mock_execute):
+        mock_execute.return_value = {
+            "status": "partial_failure",
+            "message": "Stopped at subgoal 1 after 3 attempt(s).",
+            "canvasState": sample_canvas_state(),
+            "layoutPolicyApplied": "no-overlap",
+            "layoutAdjustments": [],
+            "committedActions": [],
+            "completedStepCount": 0,
+            "stepReports": [
+                {
+                    "index": 0,
+                    "subgoal": "title the methods cluster",
+                    "successCriteria": ['Exists text-label containing "Methods"'],
+                    "status": "failed",
+                    "attemptCount": 3,
+                    "attempts": [],
+                    "actions": [],
+                    "criteriaResults": [],
+                    "unmetCriteria": [
+                        {
+                            "criterion": 'Exists text-label containing "Methods"',
+                            "status": "failed",
+                            "verifier": "deterministic",
+                            "rationale": "No entity matched the requested type and text.",
+                        }
+                    ],
+                    "layoutAdjustments": [],
+                }
+            ],
+            "failedStepIndex": 0,
+        }
+
+        response = self.client.post(
+            "/api/llm/execute-plan",
+            json={
+                "canvasState": sample_canvas_state(),
+                "layoutPolicy": "no-overlap",
+                "steps": [
+                    {
+                        "subgoal": "title the methods cluster",
+                        "successCriteria": ['Exists text-label containing "Methods"'],
+                        "actions": [
+                            {
+                                "op": "Annotate",
+                                "target": "n4",
+                                "text": "Methods",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "partial_failure")
+        self.assertEqual(payload["stepReports"][0]["attemptCount"], 3)
 
 
 if __name__ == "__main__":

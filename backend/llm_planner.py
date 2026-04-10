@@ -12,6 +12,7 @@ from canvas_actions import (
     ACTION_SCHEMAS,
     CANVAS_BOUNDS,
     HANDLE_VALUES,
+    LAYOUT_POLICY_VALUES,
     CanvasActionError,
     action_error_payload,
     execute_action_batch,
@@ -22,7 +23,9 @@ from canvas_state import empty_canvas_state, validate_canvas_state
 
 DEFAULT_SUBGOAL_MODEL = "gpt-5.4-mini"
 DEFAULT_ACTION_MODEL = "gpt-5.4"
+DEFAULT_CHECKLIST_EVALUATOR_MODEL = "gpt-5.4-mini"
 ACTION_PLANNING_MAX_ATTEMPTS = 3
+SUBGOAL_EXECUTION_MAX_ATTEMPTS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,34 @@ RELATIVE_GEOMETRY_RE = re.compile(
 )
 NEAREST_REFERENCE_RE = re.compile(
     rf"\b(?P<direction>closest|nearest)\s+(?P<kind>{REFERENCE_KIND_PATTERN})\b",
+    re.IGNORECASE,
+)
+CRITERION_EXISTS_RE = re.compile(
+    r'^Exists (?P<kind>sticky-note|text-label|object|connector) containing "(?P<text>[^"]+)"\.?$',
+    re.IGNORECASE,
+)
+CRITERION_MISSING_RE = re.compile(
+    r'^Missing (?P<kind>sticky-note|text-label|object|connector) containing "(?P<text>[^"]+)"\.?$',
+    re.IGNORECASE,
+)
+CRITERION_CONNECTOR_EXISTS_RE = re.compile(
+    r'^Exists connector from "(?P<source>[^"]+)" to "(?P<target>[^"]+)"\.?$',
+    re.IGNORECASE,
+)
+CRITERION_CONNECTOR_MISSING_RE = re.compile(
+    r'^Missing connector from "(?P<source>[^"]+)" to "(?P<target>[^"]+)"\.?$',
+    re.IGNORECASE,
+)
+CRITERION_SELECTED_RE = re.compile(
+    r'^Selected (?P<kind>sticky-note|text-label|object) containing "(?P<text>[^"]+)"\.?$',
+    re.IGNORECASE,
+)
+CRITERION_COUNT_RE = re.compile(
+    r"^Count (?P<kind>sticky-note|text-label|object|connector) (?P<operator>>=|=|<=) (?P<count>\d+)\.?$",
+    re.IGNORECASE,
+)
+CRITERION_RELATION_RE = re.compile(
+    r'^"(?P<left>[^"]+)" is (?P<relation>left of|right of|above|below) "(?P<right>[^"]+)"\.?$',
     re.IGNORECASE,
 )
 
@@ -163,6 +194,12 @@ ACTION_PLANNER_REQUEST_SCHEMA = {
     "properties": {
         "subgoal": {"type": "string", "minLength": 1},
         "canvasState": {"type": "object"},
+        "successCriteria": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {"type": "string", "minLength": 1},
+        },
     },
     "required": ["subgoal"],
     "additionalProperties": False,
@@ -178,8 +215,14 @@ SUBGOAL_RESPONSE_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "subgoal": {"type": "string"},
+                    "successCriteria": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "items": {"type": "string", "minLength": 1},
+                    },
                 },
-                "required": ["subgoal"],
+                "required": ["subgoal", "successCriteria"],
                 "additionalProperties": False,
             },
         },
@@ -203,6 +246,70 @@ ACTION_RESPONSE_SCHEMA = {
 
 ACTION_OUTPUT_ITEM_KEYS = list(_build_action_output_item_schema()["properties"].keys())
 
+EXECUTE_PLAN_REQUEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "canvasState": {"type": "object"},
+        "layoutPolicy": {
+            "type": "string",
+            "enum": list(LAYOUT_POLICY_VALUES),
+        },
+        "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "subgoal": {"type": "string", "minLength": 1},
+                    "successCriteria": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "items": {"type": "string", "minLength": 1},
+                    },
+                    "actions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "object"},
+                    },
+                    "referenceResolution": {"type": "object"},
+                    "failureLog": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                "required": ["subgoal", "successCriteria", "actions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["steps"],
+    "additionalProperties": False,
+}
+
+CHECKLIST_EVALUATION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "criteriaResults": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "number", "minimum": 0},
+                    "criterion": {"type": "string", "minLength": 1},
+                    "status": {"type": "string", "enum": ["passed", "failed"]},
+                    "rationale": {"type": "string", "minLength": 1},
+                },
+                "required": ["index", "criterion", "status", "rationale"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["criteriaResults"],
+    "additionalProperties": False,
+}
+
 
 def validate_subgoal_request(payload: object) -> None:
     try:
@@ -214,6 +321,13 @@ def validate_subgoal_request(payload: object) -> None:
 def validate_action_planner_request(payload: object) -> None:
     try:
         validate_against_schema(ACTION_PLANNER_REQUEST_SCHEMA, payload)
+    except Exception as exc:  # pragma: no cover - narrowed by caller tests
+        raise LLMPlannerValidationError(str(exc)) from exc
+
+
+def validate_execute_plan_request(payload: object) -> None:
+    try:
+        validate_against_schema(EXECUTE_PLAN_REQUEST_SCHEMA, payload)
     except Exception as exc:  # pragma: no cover - narrowed by caller tests
         raise LLMPlannerValidationError(str(exc)) from exc
 
@@ -299,6 +413,18 @@ def empty_reference_resolution() -> dict:
         "ambiguousReferences": [],
         "unresolvedReferences": [],
     }
+
+
+def _normalize_success_criteria(raw_criteria: List[str]) -> List[str]:
+    criteria = []
+    for raw_criterion in raw_criteria:
+        criterion = raw_criterion.strip()
+        if not criterion:
+            raise LLMPlannerUpstreamError(
+                "Success criteria must be non-empty strings."
+            )
+        criteria.append(criterion)
+    return criteria
 
 
 def _normalize_kind_term(term: Optional[str]) -> str:
@@ -743,13 +869,292 @@ def _compact_canvas_context(canvas_state: dict) -> dict:
     }
 
 
+def _normalize_canvas_text(value: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _criterion_result(
+    criterion: str,
+    *,
+    status: str,
+    verifier: str,
+    rationale: str,
+) -> dict:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "verifier": verifier,
+        "rationale": rationale,
+    }
+
+
+def _iter_entities_for_criterion(canvas_state: dict, kind: str) -> List[dict]:
+    normalized_kind = kind.lower()
+    entities = []
+    if normalized_kind in {"sticky-note", "text-label", "object"}:
+        for entity in canvas_state["objects"]:
+            if normalized_kind == "sticky-note" and entity["type"] != "sticky-note":
+                continue
+            if normalized_kind == "text-label" and entity["type"] != "text-label":
+                continue
+            entities.append(
+                {
+                    "id": entity["id"],
+                    "kind": entity["type"],
+                    "text": entity.get("content", {}).get("text", ""),
+                    "geometry": entity.get("geometry"),
+                }
+            )
+    elif normalized_kind == "connector":
+        for entity in canvas_state["connectors"]:
+            entities.append(
+                {
+                    "id": entity["id"],
+                    "kind": "connector",
+                    "text": entity.get("content", {}).get("label", ""),
+                    "source": entity.get("source"),
+                    "target": entity.get("target"),
+                    "geometry": entity.get("geometry"),
+                }
+            )
+    return entities
+
+
+def _find_entities_by_text(canvas_state: dict, kind: str, phrase: str) -> List[dict]:
+    needle = _normalize_canvas_text(phrase)
+    if not needle:
+        return []
+    return [
+        entity
+        for entity in _iter_entities_for_criterion(canvas_state, kind)
+        if needle in _normalize_canvas_text(entity.get("text"))
+    ]
+
+
+def _count_entities_for_kind(canvas_state: dict, kind: str) -> int:
+    return len(_iter_entities_for_criterion(canvas_state, kind))
+
+
+def _objects_selected(canvas_state: dict, candidates: List[dict]) -> List[dict]:
+    selected_ids = set(canvas_state["selection"])
+    return [entity for entity in candidates if entity["id"] in selected_ids]
+
+
+def _object_center(entity: dict) -> Optional[dict]:
+    geometry = entity.get("geometry")
+    if not isinstance(geometry, dict):
+        return None
+    return {
+        "x": geometry["x"] + geometry["w"] / 2,
+        "y": geometry["y"] + geometry["h"] / 2,
+    }
+
+
+def _connector_exists_between(
+    canvas_state: dict,
+    source_phrase: str,
+    target_phrase: str,
+) -> bool:
+    source_matches = _find_entities_by_text(canvas_state, "object", source_phrase)
+    target_matches = _find_entities_by_text(canvas_state, "object", target_phrase)
+    if not source_matches or not target_matches:
+        return False
+
+    source_ids = {entity["id"] for entity in source_matches}
+    target_ids = {entity["id"] for entity in target_matches}
+    for connector in _iter_entities_for_criterion(canvas_state, "connector"):
+        if connector.get("source") in source_ids and connector.get("target") in target_ids:
+            return True
+    return False
+
+
+def _compare_count(actual: int, operator: str, expected: int) -> bool:
+    if operator == ">=":
+        return actual >= expected
+    if operator == "<=":
+        return actual <= expected
+    return actual == expected
+
+
+def _evaluate_criterion_deterministically(
+    criterion: str,
+    before_state: dict,
+    after_state: dict,
+) -> Optional[dict]:
+    del before_state
+    stripped = criterion.strip()
+
+    match = CRITERION_CONNECTOR_EXISTS_RE.match(stripped)
+    if match:
+        passed = _connector_exists_between(
+            after_state,
+            match.group("source"),
+            match.group("target"),
+        )
+        return _criterion_result(
+            criterion,
+            status="passed" if passed else "failed",
+            verifier="deterministic",
+            rationale=(
+                "Found a connector between the requested text-matched objects."
+                if passed
+                else "No connector matched the requested source and target text."
+            ),
+        )
+
+    match = CRITERION_CONNECTOR_MISSING_RE.match(stripped)
+    if match:
+        passed = not _connector_exists_between(
+            after_state,
+            match.group("source"),
+            match.group("target"),
+        )
+        return _criterion_result(
+            criterion,
+            status="passed" if passed else "failed",
+            verifier="deterministic",
+            rationale=(
+                "No connector matched the requested source and target text."
+                if passed
+                else "A connector still exists between the requested objects."
+            ),
+        )
+
+    match = CRITERION_EXISTS_RE.match(stripped)
+    if match:
+        matches = _find_entities_by_text(after_state, match.group("kind"), match.group("text"))
+        return _criterion_result(
+            criterion,
+            status="passed" if matches else "failed",
+            verifier="deterministic",
+            rationale=(
+                f"Matched {len(matches)} entity(s) for the requested text."
+                if matches
+                else "No entity matched the requested type and text."
+            ),
+        )
+
+    match = CRITERION_MISSING_RE.match(stripped)
+    if match:
+        matches = _find_entities_by_text(after_state, match.group("kind"), match.group("text"))
+        return _criterion_result(
+            criterion,
+            status="passed" if not matches else "failed",
+            verifier="deterministic",
+            rationale=(
+                "No matching entities remained in the canvas."
+                if not matches
+                else f"Found {len(matches)} entity(s) that still match the forbidden text."
+            ),
+        )
+
+    match = CRITERION_SELECTED_RE.match(stripped)
+    if match:
+        matches = _find_entities_by_text(after_state, match.group("kind"), match.group("text"))
+        selected_matches = _objects_selected(after_state, matches)
+        return _criterion_result(
+            criterion,
+            status="passed" if selected_matches else "failed",
+            verifier="deterministic",
+            rationale=(
+                "At least one matching entity is selected."
+                if selected_matches
+                else "No matching selected entity was found."
+            ),
+        )
+
+    match = CRITERION_COUNT_RE.match(stripped)
+    if match:
+        actual = _count_entities_for_kind(after_state, match.group("kind"))
+        expected = int(match.group("count"))
+        passed = _compare_count(actual, match.group("operator"), expected)
+        return _criterion_result(
+            criterion,
+            status="passed" if passed else "failed",
+            verifier="deterministic",
+            rationale=f"Observed count {actual}; expected {match.group('operator')} {expected}.",
+        )
+
+    match = CRITERION_RELATION_RE.match(stripped)
+    if match:
+        left_matches = _find_entities_by_text(after_state, "object", match.group("left"))
+        right_matches = _find_entities_by_text(after_state, "object", match.group("right"))
+        if not left_matches or not right_matches:
+            return _criterion_result(
+                criterion,
+                status="failed",
+                verifier="deterministic",
+                rationale="Could not find both referenced objects in the canvas.",
+            )
+
+        relation = match.group("relation").lower()
+        for left_entity in left_matches:
+            left_center = _object_center(left_entity)
+            if left_center is None:
+                continue
+            for right_entity in right_matches:
+                if left_entity["id"] == right_entity["id"]:
+                    continue
+                right_center = _object_center(right_entity)
+                if right_center is None:
+                    continue
+                if relation == "left of" and left_center["x"] < right_center["x"]:
+                    return _criterion_result(
+                        criterion,
+                        status="passed",
+                        verifier="deterministic",
+                        rationale="Found matching objects in the requested left-to-right order.",
+                    )
+                if relation == "right of" and left_center["x"] > right_center["x"]:
+                    return _criterion_result(
+                        criterion,
+                        status="passed",
+                        verifier="deterministic",
+                        rationale="Found matching objects in the requested right-to-left order.",
+                    )
+                if relation == "above" and left_center["y"] < right_center["y"]:
+                    return _criterion_result(
+                        criterion,
+                        status="passed",
+                        verifier="deterministic",
+                        rationale="Found matching objects in the requested vertical order.",
+                    )
+                if relation == "below" and left_center["y"] > right_center["y"]:
+                    return _criterion_result(
+                        criterion,
+                        status="passed",
+                        verifier="deterministic",
+                        rationale="Found matching objects in the requested vertical order.",
+                    )
+
+        return _criterion_result(
+            criterion,
+            status="failed",
+            verifier="deterministic",
+            rationale="Matching objects were found, but not in the requested relative position.",
+        )
+
+    return None
+
+
 def build_subgoal_system_prompt(canvas_state: dict) -> str:
     return "\n".join(
         [
             "You decompose a whiteboard command into a short ordered list of subgoals.",
-            "Prompt 1 returns subgoals only.",
+            "Prompt 1 returns subgoals and successCriteria only.",
             "Allowed action set: Create, Select, Move, Resize, Connect, Annotate, Delete.",
             "Do not emit atomic actions, explanations, markdown, or extra keys.",
+            "Each subgoal must include 1 to 4 observable successCriteria strings.",
+            "Phrase successCriteria as visible outcomes in the canvas state.",
+            "Prefer these deterministic checklist templates whenever possible:",
+            'Exists sticky-note containing "..."',
+            'Exists text-label containing "..."',
+            'Missing sticky-note containing "..."',
+            'Exists connector from "..." to "..."',
+            'Selected sticky-note containing "..."',
+            'Count sticky-note >= 3',
+            '"..." is left of "..."',
+            "Use a short semantic criterion only when no deterministic template fits the subgoal.",
             "Never invent nonexistent objects, connectors, or IDs.",
             "If you mention existing entities conceptually, rely only on CURRENT_CANVAS_STATE_JSON.",
             "Selection is explicit in the canvas state and should guide references like 'these notes'.",
@@ -801,11 +1206,14 @@ def build_action_user_prompt(
     subgoal: str,
     reference_resolution: dict,
     canvas_state: dict,
+    success_criteria: Optional[List[str]] = None,
 ) -> str:
     return "\n".join(
         [
             "Convert this single subgoal into atomic whiteboard actions:",
             f"SUBGOAL: {subgoal}",
+            "SUCCESS_CRITERIA_JSON:",
+            json.dumps(success_criteria or [], indent=2, sort_keys=True),
             "RESOLVED_REFERENCES_JSON:",
             json.dumps(reference_resolution["resolvedReferences"], indent=2, sort_keys=True),
             "AMBIGUOUS_REFERENCES_JSON:",
@@ -836,10 +1244,12 @@ def build_action_repair_prompt(
     subgoal: str,
     reference_resolution: dict,
     canvas_state: dict,
+    success_criteria: Optional[List[str]],
     previous_actions: List[dict],
     validation_error: str,
     failure_log: List[dict],
     structured_error: Optional[dict] = None,
+    execution_feedback: Optional[List[dict]] = None,
 ) -> str:
     hint_lines = [
         f"REPAIR_HINT: {hint}"
@@ -849,6 +1259,8 @@ def build_action_repair_prompt(
         [
             "Repair the previous atomic whiteboard action plan.",
             f"SUBGOAL: {subgoal}",
+            "SUCCESS_CRITERIA_JSON:",
+            json.dumps(success_criteria or [], indent=2, sort_keys=True),
             "RESOLVED_REFERENCES_JSON:",
             json.dumps(reference_resolution["resolvedReferences"], indent=2, sort_keys=True),
             "AMBIGUOUS_REFERENCES_JSON:",
@@ -866,7 +1278,40 @@ def build_action_repair_prompt(
             json.dumps(structured_error or {}, indent=2, sort_keys=True),
             "FAILURE_LOG_JSON:",
             json.dumps(failure_log, indent=2, sort_keys=True),
+            "EXECUTION_FEEDBACK_JSON:",
+            json.dumps(execution_feedback or [], indent=2, sort_keys=True),
             *hint_lines,
+        ]
+    )
+
+
+def build_checklist_evaluator_system_prompt() -> str:
+    return "\n".join(
+        [
+            "You evaluate whether a whiteboard subgoal succeeded.",
+            "Judge only the visible canvas state before and after execution.",
+            "For each criterion, return passed only when the criterion is clearly satisfied.",
+            "Do not suggest actions or repairs.",
+            "Keep rationales short and concrete.",
+        ]
+    )
+
+
+def build_checklist_evaluator_user_prompt(
+    subgoal: str,
+    criteria_records: List[dict],
+    before_state: dict,
+    after_state: dict,
+) -> str:
+    return "\n".join(
+        [
+            f"SUBGOAL: {subgoal}",
+            "CRITERIA_TO_EVALUATE_JSON:",
+            json.dumps(criteria_records, indent=2, sort_keys=True),
+            "BEFORE_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(before_state), indent=2, sort_keys=True),
+            "AFTER_CANVAS_STATE_JSON:",
+            json.dumps(_compact_canvas_context(after_state), indent=2, sort_keys=True),
         ]
     )
 
@@ -983,8 +1428,55 @@ def validate_subgoal_response(payload: object) -> dict:
             raise LLMPlannerUpstreamError(
                 "Subgoal response was invalid: subgoal text must be non-empty."
             )
-        subgoals.append({"subgoal": subgoal})
+        subgoals.append(
+            {
+                "subgoal": subgoal,
+                "successCriteria": _normalize_success_criteria(
+                    item["successCriteria"]
+                ),
+            }
+        )
     return {"subgoals": subgoals}
+
+
+def validate_checklist_evaluation_response(
+    payload: object,
+    expected_records: List[dict],
+) -> List[dict]:
+    try:
+        validate_against_schema(CHECKLIST_EVALUATION_RESPONSE_SCHEMA, payload)
+    except Exception as exc:
+        raise LLMPlannerUpstreamError(
+            f"Checklist evaluation response was invalid: {exc}"
+        ) from exc
+
+    by_index = {
+        int(item["index"]): item
+        for item in payload["criteriaResults"]
+    }
+    expected_indexes = {record["index"] for record in expected_records}
+    if set(by_index) != expected_indexes:
+        raise LLMPlannerUpstreamError(
+            "Checklist evaluation response was invalid: criteria indexes did not match."
+        )
+
+    ordered_results = []
+    for record in expected_records:
+        item = by_index[record["index"]]
+        criterion = item["criterion"].strip()
+        if criterion != record["criterion"]:
+            raise LLMPlannerUpstreamError(
+                "Checklist evaluation response was invalid: criterion text did not match."
+            )
+        ordered_results.append(
+            _criterion_result(
+                criterion,
+                status=item["status"],
+                verifier="llm",
+                rationale=item["rationale"].strip(),
+            )
+        )
+    return ordered_results
 
 
 def _canonicalize_action_payload(action: dict) -> dict:
@@ -1063,6 +1555,78 @@ def validate_action_response(payload: object, canvas_state: dict) -> dict:
     return {"actions": canonical_actions}
 
 
+def _evaluate_success_criteria_with_llm(
+    subgoal: str,
+    criteria_records: List[dict],
+    before_state: dict,
+    after_state: dict,
+) -> List[dict]:
+    payload = _call_openai_structured_json(
+        model=_get_model(
+            "OPENAI_CHECKLIST_EVALUATOR_MODEL",
+            DEFAULT_CHECKLIST_EVALUATOR_MODEL,
+        ),
+        system_prompt=build_checklist_evaluator_system_prompt(),
+        user_prompt=build_checklist_evaluator_user_prompt(
+            subgoal,
+            criteria_records,
+            before_state,
+            after_state,
+        ),
+        schema_name="whiteboard_success_criteria_evaluation",
+        schema=CHECKLIST_EVALUATION_RESPONSE_SCHEMA,
+    )
+    return validate_checklist_evaluation_response(payload, criteria_records)
+
+
+def evaluate_subgoal_success(
+    subgoal: str,
+    success_criteria: List[str],
+    before_state: dict,
+    after_state: dict,
+) -> dict:
+    criteria_results = [None] * len(success_criteria)
+    llm_records = []
+
+    for index, criterion in enumerate(success_criteria):
+        deterministic_result = _evaluate_criterion_deterministically(
+            criterion,
+            before_state,
+            after_state,
+        )
+        if deterministic_result is None:
+            llm_records.append({"index": index, "criterion": criterion})
+            continue
+        criteria_results[index] = deterministic_result
+
+    if llm_records:
+        llm_results = _evaluate_success_criteria_with_llm(
+            subgoal,
+            llm_records,
+            before_state,
+            after_state,
+        )
+        for record, result in zip(llm_records, llm_results):
+            criteria_results[record["index"]] = result
+
+    ordered_results = list(criteria_results)
+    unmet_criteria = [
+        {
+            "criterion": item["criterion"],
+            "status": item["status"],
+            "verifier": item["verifier"],
+            "rationale": item["rationale"],
+        }
+        for item in ordered_results
+        if item["status"] != "passed"
+    ]
+    return {
+        "criteriaResults": ordered_results,
+        "unmetCriteria": unmet_criteria,
+        "status": "passed" if not unmet_criteria else "failed",
+    }
+
+
 def plan_subgoals_with_llm(prompt: str, canvas_state: dict) -> dict:
     system_prompt = build_subgoal_system_prompt(canvas_state)
     user_prompt = build_subgoal_user_prompt(prompt)
@@ -1076,17 +1640,42 @@ def plan_subgoals_with_llm(prompt: str, canvas_state: dict) -> dict:
     return validate_subgoal_response(payload)
 
 
-def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
+def plan_actions_with_llm(
+    subgoal: str,
+    canvas_state: dict,
+    success_criteria: Optional[List[str]] = None,
+    retry_context: Optional[dict] = None,
+) -> dict:
+    normalized_success_criteria = _normalize_success_criteria(success_criteria or [])
     reference_resolution = resolve_action_references(subgoal, canvas_state)
     system_prompt = build_action_system_prompt(canvas_state)
-    user_prompt = build_action_user_prompt(
-        subgoal,
-        reference_resolution,
-        canvas_state,
-    )
     failure_log = []
     previous_actions = []
     model = _get_model("OPENAI_ACTION_MODEL", DEFAULT_ACTION_MODEL)
+    if retry_context is None:
+        user_prompt = build_action_user_prompt(
+            subgoal,
+            reference_resolution,
+            canvas_state,
+            normalized_success_criteria,
+        )
+    else:
+        previous_actions = deepcopy(retry_context.get("previousActions", []))
+        failure_log = deepcopy(retry_context.get("failureLog", []))
+        user_prompt = build_action_repair_prompt(
+            subgoal,
+            reference_resolution,
+            canvas_state,
+            normalized_success_criteria,
+            previous_actions=previous_actions,
+            validation_error=retry_context.get(
+                "validationError",
+                "The previous attempt did not satisfy the success criteria.",
+            ),
+            failure_log=failure_log,
+            structured_error=deepcopy(retry_context.get("structuredError")),
+            execution_feedback=deepcopy(retry_context.get("executionFeedback", [])),
+        )
 
     for attempt in range(1, ACTION_PLANNING_MAX_ATTEMPTS + 1):
         payload = _call_openai_structured_json(
@@ -1121,10 +1710,224 @@ def plan_actions_with_llm(subgoal: str, canvas_state: dict) -> dict:
                 subgoal,
                 reference_resolution,
                 canvas_state,
+                normalized_success_criteria,
                 previous_actions=previous_actions,
                 validation_error=str(exc),
                 failure_log=failure_log,
                 structured_error=structured_error,
+                execution_feedback=deepcopy(
+                    retry_context.get("executionFeedback", [])
+                    if retry_context is not None
+                    else []
+                ),
             )
 
     raise LLMPlannerUpstreamError("Action planning failed without a result.")
+
+
+def execute_plan_with_llm(
+    steps: List[dict],
+    canvas_state: dict,
+    layout_policy: str = "no-overlap",
+) -> dict:
+    working_state = deepcopy(canvas_state)
+    step_reports = []
+    committed_actions = []
+    committed_layout_adjustments = []
+
+    for step_index, raw_step in enumerate(steps):
+        step = deepcopy(raw_step)
+        pre_step_state = deepcopy(working_state)
+        current_actions = deepcopy(step["actions"])
+        success_criteria = _normalize_success_criteria(step["successCriteria"])
+        reference_resolution = deepcopy(
+            step.get("referenceResolution", empty_reference_resolution())
+        )
+        planning_failure_log = deepcopy(step.get("failureLog", []))
+        attempt_reports = []
+
+        for attempt in range(1, SUBGOAL_EXECUTION_MAX_ATTEMPTS + 1):
+            if attempt > 1:
+                previous_attempt = attempt_reports[-1]
+                retry_context = {
+                    "previousActions": deepcopy(previous_attempt["actions"]),
+                    "validationError": previous_attempt.get(
+                        "validationError",
+                        "The previous attempt did not satisfy the success criteria.",
+                    ),
+                    "structuredError": deepcopy(previous_attempt.get("structuredError")),
+                    "failureLog": deepcopy(planning_failure_log),
+                    "executionFeedback": deepcopy(
+                        previous_attempt.get("criteriaResults")
+                        or previous_attempt.get("executionFeedback")
+                        or []
+                    ),
+                }
+                llm_result = plan_actions_with_llm(
+                    step["subgoal"],
+                    pre_step_state,
+                    success_criteria=success_criteria,
+                    retry_context=retry_context,
+                )
+                current_actions = deepcopy(llm_result["actions"])
+                reference_resolution = deepcopy(
+                    llm_result.get(
+                        "referenceResolution",
+                        empty_reference_resolution(),
+                    )
+                )
+                planning_failure_log = deepcopy(llm_result.get("failureLog", []))
+
+            try:
+                execution_result = execute_action_batch(
+                    deepcopy(pre_step_state),
+                    current_actions,
+                    layout_policy=layout_policy,
+                )
+            except CanvasActionError as exc:
+                structured_error = action_error_payload(exc, include_status=False)
+                attempt_report = {
+                    "attempt": attempt,
+                    "status": "execution_failed",
+                    "actions": deepcopy(current_actions),
+                    "referenceResolution": reference_resolution,
+                    "planningFailureLog": deepcopy(planning_failure_log),
+                    "validationError": str(exc),
+                    "structuredError": structured_error,
+                    "executionFeedback": [
+                        _criterion_result(
+                            criterion,
+                            status="failed",
+                            verifier="deterministic",
+                            rationale=str(exc),
+                        )
+                        for criterion in success_criteria
+                    ],
+                    "criteriaResults": [],
+                    "unmetCriteria": [],
+                    "layoutAdjustments": [],
+                }
+                attempt_reports.append(attempt_report)
+                if attempt >= SUBGOAL_EXECUTION_MAX_ATTEMPTS:
+                    step_report = {
+                        "index": step_index,
+                        "subgoal": step["subgoal"],
+                        "successCriteria": success_criteria,
+                        "status": "failed",
+                        "attemptCount": len(attempt_reports),
+                        "attempts": attempt_reports,
+                        "actions": deepcopy(current_actions),
+                        "criteriaResults": [],
+                        "unmetCriteria": [],
+                        "layoutAdjustments": [],
+                    }
+                    step_reports.append(step_report)
+                    return {
+                        "status": "partial_failure",
+                        "message": (
+                            f"Stopped at subgoal {step_index + 1} after "
+                            f"{SUBGOAL_EXECUTION_MAX_ATTEMPTS} attempt(s): {exc}"
+                        ),
+                        "canvasState": working_state,
+                        "layoutPolicyApplied": layout_policy,
+                        "layoutAdjustments": committed_layout_adjustments,
+                        "committedActions": committed_actions,
+                        "completedStepCount": len(step_reports) - 1,
+                        "stepReports": step_reports,
+                        "failedStepIndex": step_index,
+                    }
+                continue
+
+            evaluation = evaluate_subgoal_success(
+                step["subgoal"],
+                success_criteria,
+                pre_step_state,
+                execution_result["canvas_state"],
+            )
+            attempt_status = (
+                "completed"
+                if evaluation["status"] == "passed"
+                else "criteria_failed"
+            )
+            attempt_report = {
+                "attempt": attempt,
+                "status": attempt_status,
+                "actions": deepcopy(current_actions),
+                "referenceResolution": reference_resolution,
+                "planningFailureLog": deepcopy(planning_failure_log),
+                "criteriaResults": deepcopy(evaluation["criteriaResults"]),
+                "unmetCriteria": deepcopy(evaluation["unmetCriteria"]),
+                "layoutAdjustments": deepcopy(execution_result["layout_adjustments"]),
+                "validationError": (
+                    "The executed actions did not satisfy the success criteria."
+                    if evaluation["status"] != "passed"
+                    else ""
+                ),
+                "executionFeedback": deepcopy(evaluation["criteriaResults"]),
+            }
+            attempt_reports.append(attempt_report)
+
+            if evaluation["status"] == "passed":
+                working_state = deepcopy(execution_result["canvas_state"])
+                committed_actions.extend(deepcopy(current_actions))
+                committed_layout_adjustments.extend(
+                    deepcopy(execution_result["layout_adjustments"])
+                )
+                step_reports.append(
+                    {
+                        "index": step_index,
+                        "subgoal": step["subgoal"],
+                        "successCriteria": success_criteria,
+                        "status": "completed",
+                        "attemptCount": len(attempt_reports),
+                        "attempts": attempt_reports,
+                        "actions": deepcopy(current_actions),
+                        "criteriaResults": deepcopy(evaluation["criteriaResults"]),
+                        "unmetCriteria": [],
+                        "layoutAdjustments": deepcopy(
+                            execution_result["layout_adjustments"]
+                        ),
+                    }
+                )
+                break
+
+            if attempt >= SUBGOAL_EXECUTION_MAX_ATTEMPTS:
+                step_reports.append(
+                    {
+                        "index": step_index,
+                        "subgoal": step["subgoal"],
+                        "successCriteria": success_criteria,
+                        "status": "failed",
+                        "attemptCount": len(attempt_reports),
+                        "attempts": attempt_reports,
+                        "actions": deepcopy(current_actions),
+                        "criteriaResults": deepcopy(evaluation["criteriaResults"]),
+                        "unmetCriteria": deepcopy(evaluation["unmetCriteria"]),
+                        "layoutAdjustments": [],
+                    }
+                )
+                return {
+                    "status": "partial_failure",
+                    "message": (
+                        f"Stopped at subgoal {step_index + 1} after "
+                        f"{SUBGOAL_EXECUTION_MAX_ATTEMPTS} attempt(s)."
+                    ),
+                    "canvasState": working_state,
+                    "layoutPolicyApplied": layout_policy,
+                    "layoutAdjustments": committed_layout_adjustments,
+                    "committedActions": committed_actions,
+                    "completedStepCount": len(step_reports) - 1,
+                    "stepReports": step_reports,
+                    "failedStepIndex": step_index,
+                }
+
+    return {
+        "status": "ok",
+        "message": f"Executed {len(steps)} subgoal(s) successfully.",
+        "canvasState": working_state,
+        "layoutPolicyApplied": layout_policy,
+        "layoutAdjustments": committed_layout_adjustments,
+        "committedActions": committed_actions,
+        "completedStepCount": len(steps),
+        "stepReports": step_reports,
+    }

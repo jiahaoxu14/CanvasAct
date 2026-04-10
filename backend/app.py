@@ -16,10 +16,12 @@ from llm_planner import (
     LLMPlannerError,
     LLMPlannerValidationError,
     empty_reference_resolution,
+    execute_plan_with_llm,
     plan_actions_with_llm,
     plan_subgoals_with_llm,
     resolve_canvas_state,
     validate_action_planner_request,
+    validate_execute_plan_request,
     validate_subgoal_request,
 )
 
@@ -211,7 +213,11 @@ def create_app() -> Flask:
                 payload.get("canvasState"),
                 app.config["LATEST_CANVAS_STATE"],
             )
-            llm_result = plan_actions_with_llm(payload["subgoal"], canvas_state)
+            llm_result = plan_actions_with_llm(
+                payload["subgoal"],
+                canvas_state,
+                success_criteria=payload.get("successCriteria"),
+            )
         except LLMPlannerValidationError as exc:
             return (
                 jsonify(
@@ -258,6 +264,60 @@ def create_app() -> Flask:
                 ).get("ambiguousReferences", []),
             }
         )
+
+    @app.post("/api/llm/execute-plan")
+    def execute_llm_plan():
+        payload = request.get_json(silent=True)
+
+        try:
+            validate_execute_plan_request(payload)
+            canvas_state = resolve_canvas_state(
+                payload.get("canvasState"),
+                app.config["LATEST_CANVAS_STATE"],
+            )
+            execution_result = execute_plan_with_llm(
+                payload["steps"],
+                canvas_state,
+                layout_policy=payload.get("layoutPolicy", "no-overlap"),
+            )
+        except LLMPlannerValidationError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                400,
+            )
+        except LLMPlannerConfigError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                500,
+            )
+        except LLMPlannerError as exc:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                ),
+                502,
+            )
+
+        if payload.get("canvasState") is None and execution_result["status"] in {
+            "ok",
+            "partial_failure",
+        }:
+            app.config["LATEST_CANVAS_STATE"] = deepcopy(execution_result["canvasState"])
+
+        return jsonify(execution_result)
 
     return app
 
