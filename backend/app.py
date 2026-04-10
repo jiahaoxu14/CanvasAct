@@ -1,323 +1,121 @@
-import os
-from copy import deepcopy
+from __future__ import annotations
 
-from flask import Flask, jsonify, request
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-from canvas_actions import (
-    CanvasActionError,
-    action_error_payload,
-    execute_action_batch,
-    get_action_catalog,
-    validate_action_request,
-)
-from canvas_state import empty_canvas_state, validate_canvas_state
-from llm_planner import (
-    LLMPlannerConfigError,
-    LLMPlannerError,
-    LLMPlannerValidationError,
-    empty_reference_resolution,
-    execute_plan_with_llm,
-    plan_actions_with_llm,
-    plan_subgoals_with_llm,
-    resolve_canvas_state,
-    validate_action_planner_request,
-    validate_execute_plan_request,
-    validate_subgoal_request,
-)
+from flask import Flask, current_app, jsonify, request
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+SNAPSHOT_PATH = DATA_DIR / "canvas_snapshot.json"
+
+BOOTSTRAP_PAYLOAD = {
+    "appName": "CanvasAct",
+    "defaultBoardName": "Infinite Planning Board",
+    "capabilities": [
+        "React + Vite frontend shell",
+        "tldraw infinite canvas workspace",
+        "Flask JSON API",
+        "Local canvas snapshot persistence endpoint",
+    ],
+    "starterNotes": [
+        {
+            "title": "Theme Map",
+            "prompt": "Cluster research notes into themes, then connect the strongest relationships.",
+        },
+        {
+            "title": "Workflow Draft",
+            "prompt": "Sketch the rough steps of a new user flow before refining it.",
+        },
+        {
+            "title": "Retro Board",
+            "prompt": "Drop sticky notes for wins, friction points, and follow-up actions.",
+        },
+    ],
+    "palette": ["#17324d", "#f46e27", "#f6efe5", "#57b894"],
+}
 
 
-def create_app() -> Flask:
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _load_snapshot(snapshot_path: Path) -> dict[str, Any] | None:
+    if not snapshot_path.exists():
+        return None
+
+    return json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+
+def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__)
-    app.config["LATEST_CANVAS_STATE"] = empty_canvas_state()
+    app.config.update(
+        SNAPSHOT_PATH=SNAPSHOT_PATH,
+        BOOTSTRAP_PAYLOAD=BOOTSTRAP_PAYLOAD,
+    )
+
+    if test_config:
+        app.config.update(test_config)
 
     @app.get("/api/health")
-    def healthcheck():
+    def health() -> Any:
         return jsonify(
             {
                 "status": "ok",
-                "service": "backend",
-                "message": "Flask API is running.",
+                "service": "canvasact-backend",
+                "message": "Flask backend is ready.",
+                "timestamp": _utc_now_iso(),
             }
         )
 
-    @app.get("/api/canvas-state")
-    def get_canvas_state():
-        return jsonify(app.config["LATEST_CANVAS_STATE"])
+    @app.get("/api/bootstrap")
+    def bootstrap() -> Any:
+        payload = dict(current_app.config["BOOTSTRAP_PAYLOAD"])
+        payload["timestamp"] = _utc_now_iso()
+        return jsonify(payload)
 
-    @app.post("/api/canvas-state")
-    def save_canvas_state():
+    @app.get("/api/canvas-snapshot")
+    def get_canvas_snapshot() -> Any:
+        snapshot_path = Path(current_app.config["SNAPSHOT_PATH"])
+        snapshot_record = _load_snapshot(snapshot_path)
+
+        return jsonify(
+            {
+                "hasSavedState": snapshot_record is not None,
+                "snapshot": None if snapshot_record is None else snapshot_record.get("snapshot"),
+                "savedAt": None if snapshot_record is None else snapshot_record.get("savedAt"),
+            }
+        )
+
+    @app.put("/api/canvas-snapshot")
+    def save_canvas_snapshot() -> Any:
         payload = request.get_json(silent=True)
-        validation_error = validate_canvas_state(payload)
-        if validation_error:
+        if not payload or not isinstance(payload.get("snapshot"), dict):
             return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": validation_error,
-                    }
-                ),
+                jsonify({"error": "Expected a JSON body with a top-level 'snapshot' object."}),
                 400,
             )
 
-        app.config["LATEST_CANVAS_STATE"] = deepcopy(payload)
+        snapshot_path = Path(current_app.config["SNAPSHOT_PATH"])
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+
+        snapshot_record = {
+            "savedAt": _utc_now_iso(),
+            "snapshot": payload["snapshot"],
+        }
+        snapshot_path.write_text(
+            json.dumps(snapshot_record, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
         return jsonify(
             {
-                "status": "ok",
-                "message": "Canvas state saved.",
-                "counts": {
-                    "objects": len(payload["objects"]),
-                    "connectors": len(payload["connectors"]),
-                    "selection": len(payload["selection"]),
-                },
-                "canvasState": app.config["LATEST_CANVAS_STATE"],
+                "hasSavedState": True,
+                "savedAt": snapshot_record["savedAt"],
             }
         )
-
-    @app.get("/api/action-schemas")
-    def get_action_schemas():
-        return jsonify(
-            {
-                "status": "ok",
-                "actions": get_action_catalog(),
-            }
-        )
-
-    @app.post("/api/canvas-actions")
-    def apply_canvas_actions():
-        payload = request.get_json(silent=True)
-        try:
-            validate_action_request(payload)
-        except CanvasActionError as exc:
-            return (
-                jsonify(action_error_payload(exc, include_status=True)),
-                400,
-            )
-
-        provided_canvas_state = payload.get("canvasState")
-        if provided_canvas_state is not None:
-            base_canvas_state = deepcopy(provided_canvas_state)
-            validation_error = validate_canvas_state(base_canvas_state)
-            if validation_error:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": f"Provided canvas state is invalid: {validation_error}",
-                        }
-                    ),
-                    400,
-                )
-        else:
-            base_canvas_state = app.config["LATEST_CANVAS_STATE"]
-            validation_error = validate_canvas_state(base_canvas_state)
-            if validation_error:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": f"Stored canvas state is invalid: {validation_error}",
-                        }
-                    ),
-                    500,
-                )
-
-        try:
-            execution_result = execute_action_batch(
-                base_canvas_state,
-                payload["actions"],
-                layout_policy=payload.get("layoutPolicy", "none"),
-            )
-        except CanvasActionError as exc:
-            return (
-                jsonify(action_error_payload(exc, include_status=True)),
-                400,
-            )
-
-        dry_run = payload.get("dry_run", False)
-        if not dry_run and provided_canvas_state is None:
-            app.config["LATEST_CANVAS_STATE"] = execution_result["canvas_state"]
-
-        return jsonify(
-            {
-                "status": "ok",
-                "message": f"Executed {len(payload['actions'])} action(s).",
-                "dryRun": dry_run,
-                "executionLog": execution_result["execution_log"],
-                "undoHandlers": [
-                    entry["undo_handler"]
-                    for entry in execution_result["executed_actions"]
-                ],
-                "layoutPolicyApplied": execution_result["layout_policy_applied"],
-                "layoutAdjustments": execution_result["layout_adjustments"],
-                "canvasState": execution_result["canvas_state"],
-            }
-        )
-
-    @app.post("/api/llm/subgoals")
-    def get_subgoals_from_prompt():
-        payload = request.get_json(silent=True)
-
-        try:
-            validate_subgoal_request(payload)
-            canvas_state = resolve_canvas_state(
-                payload.get("canvasState"),
-                app.config["LATEST_CANVAS_STATE"],
-            )
-            llm_result = plan_subgoals_with_llm(payload["prompt"], canvas_state)
-        except LLMPlannerValidationError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                400,
-            )
-        except LLMPlannerConfigError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                500,
-            )
-        except LLMPlannerError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                502,
-            )
-
-        return jsonify(
-            {
-                "status": "ok",
-                "subgoals": llm_result["subgoals"],
-            }
-        )
-
-    @app.post("/api/llm/actions")
-    def get_actions_from_subgoal():
-        payload = request.get_json(silent=True)
-
-        try:
-            validate_action_planner_request(payload)
-            canvas_state = resolve_canvas_state(
-                payload.get("canvasState"),
-                app.config["LATEST_CANVAS_STATE"],
-            )
-            llm_result = plan_actions_with_llm(
-                payload["subgoal"],
-                canvas_state,
-                success_criteria=payload.get("successCriteria"),
-            )
-        except LLMPlannerValidationError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                400,
-            )
-        except LLMPlannerConfigError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                500,
-            )
-        except LLMPlannerError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                502,
-            )
-
-        return jsonify(
-            {
-                "status": "ok",
-                "actions": llm_result["actions"],
-                "referenceResolution": llm_result.get(
-                    "referenceResolution",
-                    empty_reference_resolution(),
-                ),
-                "failureLog": llm_result.get("failureLog", []),
-                "ambiguousReferences": llm_result.get(
-                    "referenceResolution",
-                    empty_reference_resolution(),
-                ).get("ambiguousReferences", []),
-            }
-        )
-
-    @app.post("/api/llm/execute-plan")
-    def execute_llm_plan():
-        payload = request.get_json(silent=True)
-
-        try:
-            validate_execute_plan_request(payload)
-            canvas_state = resolve_canvas_state(
-                payload.get("canvasState"),
-                app.config["LATEST_CANVAS_STATE"],
-            )
-            execution_result = execute_plan_with_llm(
-                payload["steps"],
-                canvas_state,
-                layout_policy=payload.get("layoutPolicy", "no-overlap"),
-            )
-        except LLMPlannerValidationError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                400,
-            )
-        except LLMPlannerConfigError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                500,
-            )
-        except LLMPlannerError as exc:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                    }
-                ),
-                502,
-            )
-
-        if payload.get("canvasState") is None and execution_result["status"] in {
-            "ok",
-            "partial_failure",
-        }:
-            app.config["LATEST_CANVAS_STATE"] = deepcopy(execution_result["canvasState"])
-
-        return jsonify(execution_result)
 
     return app
 
@@ -326,4 +124,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=int(os.environ.get("BACKEND_PORT", "5000")))
+    app.run(debug=True, port=5000)

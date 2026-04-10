@@ -1,11 +1,11 @@
 # CanvasAct
 
-This repo is initialized as a React frontend plus a Flask backend.
+This repo contains a Vite + React frontend with the official `tldraw` agent starter kit UI and a Flask backend managed with a local Python virtual environment.
 
 ## Structure
 
-- `frontend/`: React app powered by Vite
-- `backend/`: Flask API with a local virtual environment in `backend/.venv`
+- `frontend/`: React app powered by Vite, `tldraw`, and the official agent starter kit
+- `backend/`: Flask API, tests, and a local `.venv`
 
 ## Backend setup
 
@@ -17,6 +17,21 @@ pip install -r requirements.txt
 flask --app app run --debug --port 5000
 ```
 
+Useful API routes:
+
+- `GET /api/health`: backend status check
+- `GET /api/bootstrap`: starter content for the frontend shell
+- `GET /api/canvas-snapshot`: read the most recently saved canvas snapshot
+- `PUT /api/canvas-snapshot`: persist a canvas snapshot payload
+
+Run backend tests:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m unittest discover -s tests -v
+```
+
 ## Frontend setup
 
 ```bash
@@ -25,7 +40,17 @@ npm install
 npm run dev
 ```
 
-The frontend dev server runs on port `5173` and proxies `/api/*` requests to the Flask server on port `5000`.
+For agent requests, put provider keys in the root `.env` file:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+GOOGLE_API_KEY=your_google_api_key_here
+```
+
+`dev.sh` copies those keys into `frontend/.dev.vars` automatically for the `tldraw` agent worker.
+
+The frontend runs on `http://127.0.0.1:5173`. It serves the `tldraw` agent UI and worker-backed `/stream` endpoint locally, and it proxies `/api/*` calls to the Flask server on `http://127.0.0.1:5000`.
 
 ## Start both in dev mode
 
@@ -33,54 +58,16 @@ The frontend dev server runs on port `5173` and proxies `/api/*` requests to the
 ./dev.sh
 ```
 
-This starts the Flask backend and Vite frontend together. If port `5000` is already in use, `dev.sh` automatically selects the next available backend port and configures the frontend proxy to match. You can also force a specific backend port with `BACKEND_PORT=5001 ./dev.sh`. Changes in the frontend will appear after refresh, and Vite will usually hot-reload them automatically as well.
+`dev.sh` expects:
 
-## Atomic Action API
+- Python dependencies installed inside `backend/.venv`
+- frontend dependencies installed inside `frontend/node_modules`
 
-The backend exposes an atomic action catalog and an action executor for the canvas scene graph.
+If the default ports are busy, `dev.sh` automatically picks the next available backend port starting at `5000` and the next available frontend port starting at `5173`.
 
-- `GET /api/action-schemas`: returns the JSON schema, required fields, optional fields, preconditions, executor name, postcondition checker, and undo handler for each atomic action.
-- `POST /api/canvas-actions`: validates an action batch before execution, applies the actions to the stored canvas state, runs postcondition checks, and returns the resulting canvas state. It also accepts an optional `canvasState` override for dry-run previews against an explicit scene graph.
-- `POST /api/llm/subgoals`: converts a user prompt into subgoals only, using the current canvas state and the allowed action set as context.
-- `POST /api/llm/actions`: converts one subgoal into atomic actions only, validated against the current canvas state.
+You can also force specific ports explicitly:
 
-Example batch:
-
-```json
-{
-  "actions": [
-    {
-      "op": "Select",
-      "targets": ["n1", "n2"]
-    },
-    {
-      "op": "Connect",
-      "id": "c1",
-      "source": "n1",
-      "target": "n2",
-      "label": "next"
-    }
-  ]
-}
+```bash
+BACKEND_PORT=5001 ./dev.sh
+FRONTEND_PORT=5174 ./dev.sh
 ```
-
-LLM planner request examples:
-
-```json
-{
-  "prompt": "Group these notes into themes and make a simple pipeline."
-}
-```
-
-```json
-{
-  "subgoal": "cluster selected notes into themes"
-}
-```
-
-The LLM planner reads `OPENAI_API_KEY` from `backend/.env`. Optional model overrides:
-
-- `OPENAI_SUBGOAL_MODEL`
-- `OPENAI_ACTION_MODEL`
-
-Before `POST /api/llm/actions` calls the model, it runs a deterministic reference resolver for common GUI-grounding phrases such as current selection, keyword-matched notes, left/right/top/bottom filters, and nearest-note lookups. The action response includes `referenceResolution` and `failureLog` so the caller can inspect what was grounded and whether the planner needed a repair pass before returning actions.
