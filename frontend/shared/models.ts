@@ -41,9 +41,15 @@ export const AGENT_MODEL_DEFINITIONS = {
 	},
 
 	// OpenAI models
-	'gpt-5.2-2025-12-11': {
-		name: 'gpt-5.2-2025-12-11',
-		id: 'gpt-5.2-2025-12-11',
+	'gpt-5.4': {
+		name: 'gpt-5.4',
+		id: 'gpt-5.4',
+		provider: 'openai',
+	},
+
+	'gpt-5.4-mini': {
+		name: 'gpt-5.4-mini',
+		id: 'gpt-5.4-mini',
 		provider: 'openai',
 	},
 } as const
