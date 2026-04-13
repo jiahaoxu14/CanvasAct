@@ -1,4 +1,4 @@
-import { BoxModel } from 'tldraw'
+import type { BoxModel } from 'tldraw'
 
 export interface PeripheralShapeCluster {
 	bounds: BoxModel

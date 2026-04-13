@@ -1,4 +1,4 @@
-import { TLDefaultFillStyle } from 'tldraw'
+import type { TLDefaultFillStyle } from 'tldraw'
 import z from 'zod'
 
 export const FocusedFillSchema = z.enum(['none', 'tint', 'background', 'solid', 'pattern'])

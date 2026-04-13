@@ -1,7 +1,9 @@
-import { FONT_SIZES } from 'tldraw'
 import { z } from 'zod'
 
 export const FocusedFontSize = z.number()
+
+// Inlined from tldraw's FONT_SIZES to avoid bundling tldraw in the worker
+const FONT_SIZES = { s: 18, m: 24, l: 36, xl: 44 } as const
 
 /**
  * Calculates the closest predefined font size and scale combination to achieve a target font size

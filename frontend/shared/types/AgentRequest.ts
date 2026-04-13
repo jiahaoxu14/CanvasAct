@@ -1,4 +1,4 @@
-import { BoxModel, JsonValue } from 'tldraw'
+import type { BoxModel, JsonValue } from 'tldraw'
 import { ContextItem } from './ContextItem'
 
 /**

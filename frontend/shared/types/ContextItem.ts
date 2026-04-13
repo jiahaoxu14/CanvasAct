@@ -1,4 +1,4 @@
-import { BoxModel, Editor, VecModel } from 'tldraw'
+import type { BoxModel, Editor, VecModel } from 'tldraw'
 import { FocusedShape } from '../format/FocusedShape'
 import { AgentIconType } from '../icons/AgentIcon'
 

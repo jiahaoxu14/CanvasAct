@@ -1,4 +1,4 @@
-import { Editor } from 'tldraw'
+import type { Editor } from 'tldraw'
 import { AgentRequest } from './AgentRequest'
 import { BasePromptPart } from './BasePromptPart'
 import { PromptPart } from './PromptPart'

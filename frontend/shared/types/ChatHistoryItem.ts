@@ -1,4 +1,4 @@
-import { JsonValue, RecordsDiff, TLRecord } from 'tldraw'
+import type { JsonValue, RecordsDiff, TLRecord } from 'tldraw'
 import { FocusedShape } from '../format/FocusedShape'
 import { AgentAction } from './AgentAction'
 import { AgentRequestSource } from './AgentRequest'
