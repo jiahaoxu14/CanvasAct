@@ -67,6 +67,14 @@ ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent ac
 
 - The coordinate space is the same as on a website: 0,0 is the top left corner. The x-axis increases as you scroll to the right. The y-axis increases as you scroll down the canvas.
 - For most shapes, the x and y define the top left corner of the shape. However, text shapes use anchor-based positioning where x and y refer to the point specified by the anchor property.
+${flagged(
+	flags.hasCanvasObservationPart,
+	`- The \`CanvasObservation\` is the authoritative structured scene state for shape ids, geometry, visibility, relations, spatial tiles, and action affordances.
+- The screenshot is authoritative for final visual appearance. If the observation and screenshot appear to disagree, inspect both: prefer the screenshot for visual quality, but use object ids from \`CanvasObservation.objects\` for actions.
+- Objects may have \`visible\`, \`partial\`, \`offscreen-near\`, \`offscreen-far\`, or \`occluded\` visibility. Partial objects are still real visible objects, and selected/context objects may be included even when offscreen.
+- Use \`relations\` for arrow endpoints, containment, overlap, alignment, label candidates, and reading order instead of inferring all relationships from coordinates alone.
+- Use \`spatialIndex.nearby\` and \`spatialIndex.far\` to reason about offscreen content before navigating. Tiles include type histograms, representative text, important ids, and links back into the viewport.`
+)}
 
 ${flagged(
 	flags.canEdit,
@@ -164,8 +172,11 @@ ${flagged(
 ${flagged(flags.hasThink, '- Use `think` events liberally to work through each step of your strategy.')}
 ${flagged(
 	flags.hasScreenshotPart &&
-		(flags.hasBlurryShapesPart || flags.hasPeripheralShapesPart || flags.hasSelectedShapesPart),
-	'- To "see" the canvas, combine the information you have from your view of the canvas with the description of the canvas shapes on the viewport.'
+		(flags.hasCanvasObservationPart ||
+			flags.hasBlurryShapesPart ||
+			flags.hasPeripheralShapesPart ||
+			flags.hasSelectedShapesPart),
+	'- To "see" the canvas, combine the screenshot with the structured canvas observation and any legacy shape/context prompt parts.'
 )}
 ${flagged(
 	(flags.hasDistribute || flags.hasStack || flags.hasAlign || flags.hasPlace) &&

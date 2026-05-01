@@ -17,7 +17,7 @@ export const ScreenshotPartUtil = registerPromptPartUtil(
 			const shapes = editor.getCurrentPageShapesSorted().filter((shape) => {
 				const bounds = editor.getShapeMaskedPageBounds(shape)
 				if (!bounds) return false
-				return contextBoundsBox.includes(bounds)
+				return Box.Collides(contextBoundsBox, bounds)
 			})
 
 			if (shapes.length === 0) {

@@ -1,5 +1,6 @@
 import type { BoxModel, JsonValue } from 'tldraw'
 import { BlurryShape } from '../format/BlurryShape'
+import { CanvasObservation } from '../format/CanvasObservation'
 import { FocusedShape } from '../format/FocusedShape'
 import { PeripheralShapeCluster } from '../format/PeripheralShapesCluster'
 import { AgentModelName } from '../models'
@@ -25,6 +26,11 @@ export interface BlurryShapesPart {
 export interface CanvasLintsPart {
 	type: 'canvasLints'
 	lints: AgentCanvasLint[]
+}
+
+export interface CanvasObservationPart {
+	type: 'canvasObservation'
+	observation: CanvasObservation
 }
 
 export interface ChatHistoryPart {
@@ -181,6 +187,18 @@ export const CanvasLintsPartDefinition: PromptPartDefinition<CanvasLintsPart> = 
 		}
 
 		return messages
+	},
+}
+
+// CanvasObservation
+export const CanvasObservationPartDefinition: PromptPartDefinition<CanvasObservationPart> = {
+	type: 'canvasObservation',
+	priority: -72,
+	buildContent: ({ observation }) => {
+		return [
+			'[CANVAS OBSERVATION]: This is the canonical structured scene state. Use object ids from this observation for actions. Use pageBounds for true canvas geometry, promptBounds for model-facing coordinates, and screenshot.bounds/object screenshotBounds to connect visual evidence to object ids.',
+			JSON.stringify(observation),
+		]
 	},
 }
 

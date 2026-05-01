@@ -31,6 +31,7 @@ import { UpsertTodoListItemActionUtil } from '../actions/UpsertTodoListItemActio
 import { AgentViewportBoundsPartUtil } from '../parts/AgentViewportBoundsPartUtil'
 import { BlurryShapesPartUtil } from '../parts/BlurryShapesPartUtil'
 import { CanvasLintsPartUtil } from '../parts/CanvasLintsPartUtil'
+import { CanvasObservationPartUtil } from '../parts/CanvasObservationPartUtil'
 import { ChatHistoryPartUtil } from '../parts/ChatHistoryPartUtil'
 import { ContextItemsPartUtil } from '../parts/ContextItemsPartUtil'
 import { DataPartUtil } from '../parts/DataPartUtil'
@@ -113,6 +114,7 @@ export const AGENT_MODE_DEFINITIONS = [
 			AgentViewportBoundsPartUtil.type,
 
 			// Shapes
+			CanvasObservationPartUtil.type,
 			BlurryShapesPartUtil.type,
 			PeripheralShapesPartUtil.type,
 			SelectedShapesPartUtil.type,
