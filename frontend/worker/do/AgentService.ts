@@ -5,8 +5,8 @@ import { LanguageModel, ModelMessage, streamText } from 'ai'
 import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../../shared/models'
 import { DebugPart } from '../../shared/schema/PromptPartDefinitions'
 import { AgentAction } from '../../shared/types/AgentAction'
+import type { AgentActionResponse, AgentStreamAction } from '../../shared/types/ActionChunk'
 import { AgentPrompt } from '../../shared/types/AgentPrompt'
-import { Streaming } from '../../shared/types/Streaming'
 import { Environment } from '../environment'
 import { buildMessages } from '../prompt/buildMessages'
 import { buildSystemPrompt } from '../prompt/buildSystemPrompt'
@@ -30,7 +30,7 @@ export class AgentService {
 		return this[provider](modelDefinition.id)
 	}
 
-	async *stream(prompt: AgentPrompt): AsyncGenerator<Streaming<AgentAction>> {
+	async *stream(prompt: AgentPrompt): AsyncGenerator<AgentStreamAction> {
 		try {
 			for await (const event of this.streamActions(prompt)) {
 				yield event
@@ -41,7 +41,7 @@ export class AgentService {
 		}
 	}
 
-	private async *streamActions(prompt: AgentPrompt): AsyncGenerator<Streaming<AgentAction>> {
+	private async *streamActions(prompt: AgentPrompt): AsyncGenerator<AgentStreamAction> {
 		const modelName = getModelName(prompt)
 		const model = this.getModel(modelName)
 
@@ -94,10 +94,10 @@ export class AgentService {
 			}
 		}
 
-		// Add the assistant message to indicate the start of the actions
+		// Add the assistant message to indicate the start of a chunked response.
 		messages.push({
 			role: 'assistant',
-			content: '{"actions": [{"_type":',
+			content: '{"chunks": [{"intent":',
 		})
 
 		// Configure thinking budgets based on model. We let models think using the think action, so we keep this as low as possible to minimize time to first token
@@ -135,28 +135,28 @@ export class AgentService {
 
 			const canForceResponseStart =
 				provider === 'anthropic.messages' || provider === 'google.generative-ai'
-			let buffer = canForceResponseStart ? '{"actions": [{"_type":' : ''
+			let buffer = canForceResponseStart ? '{"chunks": [{"intent":' : ''
 			let cursor = 0
-			let maybeIncompleteAction: AgentAction | null = null
+			let maybeIncompleteAction: StreamActionEntry | null = null
 
 			let startTime = Date.now()
 			for await (const text of textStream) {
 				buffer += text
 
-				const partialObject = closeAndParseJson(buffer)
+				const partialObject = closeAndParseJson(buffer) as AgentActionResponse | null
 				if (!partialObject) continue
 
-				const actions = partialObject.actions
-				if (!Array.isArray(actions)) continue
+				const actions = getStreamActionEntries(partialObject)
 				if (actions.length === 0) continue
 
 				// If the events list is ahead of the cursor, we know we've completed the current event
 				// We can complete the event and move the cursor forward
 				if (actions.length > cursor) {
-					const action = actions[cursor - 1] as AgentAction
-					if (action) {
+					const entry = actions[cursor - 1]
+					if (entry) {
 						yield {
-							...action,
+							...entry.action,
+							chunk: entry.chunk,
 							complete: true,
 							time: Date.now() - startTime,
 						}
@@ -167,18 +167,19 @@ export class AgentService {
 
 				// Now let's check the (potentially new) current event
 				// And let's yield it in its (potentially incomplete) state
-				const action = actions[cursor - 1] as AgentAction
-				if (action) {
+				const entry = actions[cursor - 1]
+				if (entry) {
 					// If we don't have an incomplete event yet, this is the start of a new one
 					if (!maybeIncompleteAction) {
 						startTime = Date.now()
 					}
 
-					maybeIncompleteAction = action
+					maybeIncompleteAction = entry
 
 					// Yield the potentially incomplete event
 					yield {
-						...action,
+						...entry.action,
+						chunk: entry.chunk,
 						complete: false,
 						time: Date.now() - startTime,
 					}
@@ -188,7 +189,10 @@ export class AgentService {
 			// If we've finished receiving events, but there's still an incomplete event, we need to complete it
 			if (maybeIncompleteAction) {
 				yield {
-					...maybeIncompleteAction,
+					...maybeIncompleteAction.action,
+					chunk: maybeIncompleteAction.chunk
+						? { ...maybeIncompleteAction.chunk, complete: true }
+						: undefined,
 					complete: true,
 					time: Date.now() - startTime,
 				}
@@ -198,4 +202,37 @@ export class AgentService {
 			throw error
 		}
 	}
+}
+
+interface StreamActionEntry {
+	action: AgentAction
+	chunk?: AgentStreamAction['chunk']
+}
+
+function getStreamActionEntries(response: AgentActionResponse): StreamActionEntry[] {
+	if (Array.isArray(response.chunks) && response.chunks.length > 0) {
+		return response.chunks.flatMap((chunk, chunkIndex) => {
+			const actions = Array.isArray(chunk.actions) ? chunk.actions : []
+			const chunkId = chunk.chunkId ?? `chunk-${chunkIndex + 1}`
+			const isKnownComplete = chunkIndex < response.chunks!.length - 1
+			return actions.map((action, actionIndex) => ({
+				action,
+				chunk: {
+					chunkId,
+					intent: chunk.intent,
+					index: chunkIndex,
+					actionIndex,
+					actionCount: actions.length,
+					complete: isKnownComplete && actionIndex === actions.length - 1,
+					postconditions: chunk.postconditions,
+				},
+			}))
+		})
+	}
+
+	if (Array.isArray(response.actions)) {
+		return response.actions.map((action) => ({ action }))
+	}
+
+	return []
 }

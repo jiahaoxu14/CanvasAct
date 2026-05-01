@@ -2,13 +2,13 @@ import { Editor, RecordsDiff, reverseRecordsDiff, structuredClone, TLRecord } fr
 import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTldrawShapeToFocusedShape'
 import { AgentModelName } from '../../shared/models'
 import { AgentAction } from '../../shared/types/AgentAction'
+import { AgentStreamAction } from '../../shared/types/ActionChunk'
 import { AgentInput } from '../../shared/types/AgentInput'
 import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
 import { AgentRequest } from '../../shared/types/AgentRequest'
 import { ChatHistoryItem, ChatHistoryPromptItem } from '../../shared/types/ChatHistoryItem'
 import { ContextItem } from '../../shared/types/ContextItem'
 import { PromptPart } from '../../shared/types/PromptPart'
-import { Streaming } from '../../shared/types/Streaming'
 import { TodoItem } from '../../shared/types/TodoItem'
 import { AgentHelpers } from '../AgentHelpers'
 import { getModeNode } from '../modes/AgentModeChart'
@@ -24,7 +24,9 @@ import { AgentModeManager } from './managers/AgentModeManager'
 import { AgentModelNameManager } from './managers/AgentModelNameManager'
 import { AgentRequestManager } from './managers/AgentRequestManager'
 import { AgentTodoManager } from './managers/AgentTodoManager'
+import { AgentTrajectoryManager } from './managers/AgentTrajectoryManager'
 import { AgentUserActionTracker } from './managers/AgentUserActionTracker'
+import { AgentVerificationManager } from './managers/AgentVerificationManager'
 
 /**
  * The persisted state of an agent.
@@ -101,8 +103,14 @@ export class TldrawAgent {
 	/** The todo manager associated with this agent. */
 	todos: AgentTodoManager
 
+	/** The trajectory manager associated with this agent. */
+	trajectories: AgentTrajectoryManager
+
 	/** The user action tracker associated with this agent. */
 	userAction: AgentUserActionTracker
+
+	/** The verification manager associated with this agent. */
+	verification: AgentVerificationManager
 
 	// ==================== Prompt Part Utils ====================
 
@@ -142,7 +150,9 @@ export class TldrawAgent {
 		this.modelName = new AgentModelNameManager(this)
 		this.requests = new AgentRequestManager(this)
 		this.todos = new AgentTodoManager(this)
+		this.trajectories = new AgentTrajectoryManager(this)
 		this.userAction = new AgentUserActionTracker(this)
+		this.verification = new AgentVerificationManager(this)
 
 		// Note: Agent registration is handled by AgentAppAgentsManager.createAgent()
 
@@ -215,6 +225,8 @@ export class TldrawAgent {
 		this.modelName.dispose()
 		this.requests.dispose()
 		this.todos.dispose()
+		this.trajectories.dispose()
+		this.verification.dispose()
 
 		// Note: Agent removal from registry is handled by AgentAppAgentsManager.deleteAgent()
 	}
@@ -547,7 +559,9 @@ export class TldrawAgent {
 		this.mode.reset()
 		this.requests.reset()
 		this.todos.reset()
+		this.trajectories.reset()
 		this.userAction.reset()
+		this.verification.reset()
 	}
 
 	// ==================== Request Helpers ====================
@@ -592,6 +606,9 @@ export class TldrawAgent {
 			const prompt = await this.preparePrompt(request, helpers)
 			let incompleteDiff: RecordsDiff<TLRecord> | null = null
 			const actionPromises: Promise<void>[] = []
+			let trajectoryStatus: 'completed' | 'cancelled' | 'failed' = 'completed'
+			let trajectoryError: unknown
+			this.trajectories.startRequest(request, helpers)
 			try {
 				for await (const action of this.streamAgentActions({ prompt, signal })) {
 					if (cancelled) break
@@ -627,7 +644,8 @@ export class TldrawAgent {
 								}
 
 								// Apply the action to the app and editor
-								const { diff, promise } = this.actions.act(transformedAction, helpers)
+								const { diff, promise, contract } = this.actions.act(transformedAction, helpers)
+								const streamAction = transformedAction as AgentStreamAction
 
 								if (promise) {
 									actionPromises.push(promise)
@@ -640,6 +658,8 @@ export class TldrawAgent {
 								if (transformedAction.complete) {
 									// Log completed action if debug logging is enabled
 									this.debug.logCompletedAction(transformedAction)
+									this.trajectories.recordAction(streamAction, diff, contract)
+									this.verification.verifyCompletedAction(streamAction, contract, helpers)
 								} else {
 									incompleteDiff = diff
 								}
@@ -653,12 +673,20 @@ export class TldrawAgent {
 						this.setIsActingOnEditor(false)
 					}
 				}
+				if (cancelled) {
+					trajectoryStatus = 'cancelled'
+				}
 				await Promise.all(actionPromises)
 			} catch (e) {
 				if (e === 'Cancelled by user' || (e instanceof Error && e.name === 'AbortError')) {
+					trajectoryStatus = 'cancelled'
 					return
 				}
+				trajectoryStatus = 'failed'
+				trajectoryError = e
 				this.onError(e)
+			} finally {
+				this.trajectories.finishRequest(trajectoryStatus, request, helpers, trajectoryError)
 			}
 		})()
 
@@ -682,7 +710,7 @@ export class TldrawAgent {
 	}: {
 		prompt: BaseAgentPrompt
 		signal: AbortSignal
-	}): AsyncGenerator<Streaming<AgentAction>> {
+	}): AsyncGenerator<AgentStreamAction> {
 		const res = await fetch('/stream', {
 			method: 'POST',
 			body: JSON.stringify(prompt),
@@ -720,7 +748,7 @@ export class TldrawAgent {
 								throw new Error(data.error)
 							}
 
-							const agentAction: Streaming<AgentAction> = data
+							const agentAction: AgentStreamAction = data
 							yield agentAction
 						} catch (err: any) {
 							throw new Error(err.message)

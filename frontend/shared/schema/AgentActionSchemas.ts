@@ -3,6 +3,7 @@ import { FocusedColor } from '../format/FocusedColor'
 import { FocusedFillSchema } from '../format/FocusedFill'
 import { FocusedShapeSchema, FocusedTextAnchorSchema } from '../format/FocusedShape'
 import { SimpleShapeIdSchema, TodoIdSchema } from '../types/ids-schema'
+import { TargetSelectorSchema } from './TargetSelectorSchemas'
 
 /**
  * `_systemPromptCategory` is used for system prompt generation
@@ -10,6 +11,14 @@ import { SimpleShapeIdSchema, TodoIdSchema } from '../types/ids-schema'
  *
  * See `SystemPromptCategory.ts` for available values.
  */
+
+const ActionRegionSchema = z.object({
+	x: z.number(),
+	y: z.number(),
+	w: z.number(),
+	h: z.number(),
+	coordinateSpace: z.enum(['prompt', 'page']).optional(),
+})
 
 // Add Detail Action
 export const AddDetailAction = z
@@ -31,11 +40,13 @@ export const AlignAction = z
 		alignment: z.enum(['top', 'bottom', 'left', 'right', 'center-horizontal', 'center-vertical']),
 		gap: z.number(),
 		intent: z.string(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Align',
-		description: 'The AI aligns shapes to each other on an axis.',
+		description:
+			'The AI aligns shapes to each other on an axis. Prefer targetSelector for selected/context/semantic targets; use shapeIds only when ids are explicit and unambiguous.',
 		_systemPromptCategory: 'edit',
 	})
 
@@ -46,7 +57,8 @@ export const BringToFrontAction = z
 	.object({
 		_type: z.literal('bringToFront'),
 		intent: z.string(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Bring to Front',
@@ -125,7 +137,8 @@ export const DistributeAction = z
 		_type: z.literal('distribute'),
 		direction: z.enum(['horizontal', 'vertical']),
 		intent: z.string(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Distribute',
@@ -150,6 +163,115 @@ export const LabelAction = z
 	})
 
 export type LabelAction = z.infer<typeof LabelAction>
+
+// Arrange Action
+export const ArrangeAction = z
+	.object({
+		_type: z.literal('arrange'),
+		intent: z.string(),
+		layout: z.enum(['row', 'column', 'grid', 'flow', 'radial', 'stack']),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		region: ActionRegionSchema.optional(),
+		gap: z.number().optional(),
+		columns: z.number().int().positive().optional(),
+		direction: z.enum(['horizontal', 'vertical']).optional(),
+	})
+	.meta({
+		title: 'Arrange',
+		description:
+			'The AI arranges multiple shapes into a row, column, grid, flow, radial layout, or stack. Prefer this over many move actions for common layout tasks.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type ArrangeAction = z.infer<typeof ArrangeAction>
+
+// Fit Text Action
+export const FitTextAction = z
+	.object({
+		_type: z.literal('fitText'),
+		intent: z.string(),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		containerShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		containerSelector: TargetSelectorSchema.optional(),
+		strategy: z
+			.enum(['widen-container', 'wrap-text', 'shrink-text', 'shorten-label', 'move-label'])
+			.optional(),
+		maxWidth: z.number().optional(),
+		maxCharacters: z.number().int().positive().optional(),
+	})
+	.meta({
+		title: 'Fit Text',
+		description:
+			'The AI repairs overflowing or badly placed text by widening containers, wrapping text, shrinking text, shortening labels, or moving labels into containers.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type FitTextAction = z.infer<typeof FitTextAction>
+
+// Connect Action
+export const ConnectAction = z
+	.object({
+		_type: z.literal('connect'),
+		intent: z.string(),
+		sourceShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		sourceSelector: TargetSelectorSchema.optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		relationLabel: z.string().optional(),
+		avoidDuplicates: z.boolean().optional(),
+		createdShapeIds: z.array(SimpleShapeIdSchema).optional(),
+	})
+	.meta({
+		title: 'Connect',
+		description:
+			'The AI creates bound arrows between resolved source and target shapes. It avoids duplicate arrows by default.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type ConnectAction = z.infer<typeof ConnectAction>
+
+// Cleanup Layout Action
+export const CleanupLayoutAction = z
+	.object({
+		_type: z.literal('cleanupLayout'),
+		intent: z.string(),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		strategy: z.enum(['separate-overlaps', 'grid', 'horizontal', 'vertical']).optional(),
+		gap: z.number().optional(),
+		avoidMovingLocked: z.boolean().optional(),
+	})
+	.meta({
+		title: 'Cleanup Layout',
+		description:
+			'The AI repairs layout issues such as overlapping or cramped shapes without manually moving each shape.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type CleanupLayoutAction = z.infer<typeof CleanupLayoutAction>
+
+// Annotate Group Action
+export const AnnotateGroupAction = z
+	.object({
+		_type: z.literal('annotateGroup'),
+		intent: z.string(),
+		text: z.string(),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		placement: z.enum(['top', 'bottom', 'left', 'right', 'center']).optional(),
+		annotationType: z.enum(['text', 'note']).optional(),
+		createdShapeIds: z.array(SimpleShapeIdSchema).optional(),
+	})
+	.meta({
+		title: 'Annotate Group',
+		description:
+			'The AI creates a heading or note annotation for a resolved group of shapes.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type AnnotateGroupAction = z.infer<typeof AnnotateGroupAction>
 
 // Message Action
 export const MessageAction = z
@@ -233,7 +355,8 @@ export const ResizeAction = z
 		originY: z.number(),
 		scaleX: z.number(),
 		scaleY: z.number(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Resize',
@@ -271,7 +394,8 @@ export const RotateAction = z
 		intent: z.string(),
 		originX: z.number(),
 		originY: z.number(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Rotate',
@@ -286,7 +410,8 @@ export const SendToBackAction = z
 	.object({
 		_type: z.literal('sendToBack'),
 		intent: z.string(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Send to Back',
@@ -322,7 +447,8 @@ export const StackAction = z
 		direction: z.enum(['vertical', 'horizontal']),
 		gap: z.number(),
 		intent: z.string(),
-		shapeIds: z.array(SimpleShapeIdSchema),
+		shapeIds: z.array(SimpleShapeIdSchema).optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 	})
 	.meta({
 		title: 'Stack',

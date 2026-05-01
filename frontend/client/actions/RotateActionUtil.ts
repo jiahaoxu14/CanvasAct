@@ -3,6 +3,7 @@ import { RotateAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { resolveTargetSelectorForAction } from './resolveTargets'
 
 export const RotateActionUtil = registerActionUtil(
 	class RotateActionUtil extends AgentActionUtil<RotateAction> {
@@ -16,7 +17,16 @@ export const RotateActionUtil = registerActionUtil(
 		}
 
 		override sanitizeAction(action: Streaming<RotateAction>, helpers: AgentHelpers) {
-			action.shapeIds = helpers.ensureShapeIdsExist(action.shapeIds ?? [])
+			if (!action.complete) return action
+			const shapeIds = resolveTargetSelectorForAction({
+				agent: this.agent,
+				helpers,
+				selector: action.targetSelector,
+				shapeIds: action.shapeIds,
+				actionType: 'rotate',
+			})
+			if (!shapeIds) return null
+			action.shapeIds = shapeIds
 			return action
 		}
 

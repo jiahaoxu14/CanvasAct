@@ -3,6 +3,7 @@ import { ResizeAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { resolveTargetSelectorForAction } from './resolveTargets'
 
 export const ResizeActionUtil = registerActionUtil(
 	class ResizeActionUtil extends AgentActionUtil<ResizeAction> {
@@ -16,8 +17,15 @@ export const ResizeActionUtil = registerActionUtil(
 		}
 
 		override sanitizeAction(action: Streaming<ResizeAction>, helpers: AgentHelpers) {
-			const shapeIds = helpers.ensureShapeIdsExist(action.shapeIds ?? [])
-			if (shapeIds.length === 0) return null
+			if (!action.complete) return action
+			const shapeIds = resolveTargetSelectorForAction({
+				agent: this.agent,
+				helpers,
+				selector: action.targetSelector,
+				shapeIds: action.shapeIds,
+				actionType: 'resize',
+			})
+			if (!shapeIds) return null
 
 			action.shapeIds = shapeIds
 			return action

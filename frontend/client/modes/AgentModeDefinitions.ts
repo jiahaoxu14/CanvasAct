@@ -4,13 +4,18 @@ import type { PromptPart } from '../../shared/types/PromptPart'
 // Import action utils to ensure they register themselves
 import { AddDetailActionUtil } from '../actions/AddDetailActionUtil'
 import { AlignActionUtil } from '../actions/AlignActionUtil'
+import { AnnotateGroupActionUtil } from '../actions/AnnotateGroupActionUtil'
+import { ArrangeActionUtil } from '../actions/ArrangeActionUtil'
 import { BringToFrontActionUtil } from '../actions/BringToFrontActionUtil'
 import { ClearActionUtil } from '../actions/ClearActionUtil'
+import { CleanupLayoutActionUtil } from '../actions/CleanupLayoutActionUtil'
+import { ConnectActionUtil } from '../actions/ConnectActionUtil'
 import { CountryInfoActionUtil } from '../actions/CountryInfoActionUtil'
 import { CountShapesActionUtil } from '../actions/CountShapesActionUtil'
 import { CreateActionUtil } from '../actions/CreateActionUtil'
 import { DeleteActionUtil } from '../actions/DeleteActionUtil'
 import { DistributeActionUtil } from '../actions/DistributeActionUtil'
+import { FitTextActionUtil } from '../actions/FitTextActionUtil'
 import { LabelActionUtil } from '../actions/LabelActionUtil'
 import { MessageActionUtil } from '../actions/MessageActionUtil'
 import { MoveActionUtil } from '../actions/MoveActionUtil'
@@ -153,6 +158,11 @@ export const AGENT_MODE_DEFINITIONS = [
 			MoveActionUtil.type,
 
 			// Groups of shapes
+			ArrangeActionUtil.type,
+			FitTextActionUtil.type,
+			ConnectActionUtil.type,
+			CleanupLayoutActionUtil.type,
+			AnnotateGroupActionUtil.type,
 			PlaceActionUtil.type,
 			BringToFrontActionUtil.type,
 			SendToBackActionUtil.type,

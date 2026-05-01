@@ -1,5 +1,6 @@
 import { RecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { AgentAction } from '../../../shared/types/AgentAction'
+import { ActionContract } from '../../../shared/types/ActionContract'
 import { ChatHistoryItem } from '../../../shared/types/ChatHistoryItem'
 import { Streaming } from '../../../shared/types/Streaming'
 import { AgentActionUtil, getAgentActionUtilsRecordForMode } from '../../actions/AgentActionUtil'
@@ -93,6 +94,7 @@ export class AgentActionManager extends BaseAgentManager {
 	): {
 		diff: RecordsDiff<TLRecord>
 		promise: Promise<void> | null
+		contract: ActionContract | null
 	} {
 		const { editor } = this.agent
 		const util = this.getAgentActionUtil(action._type)
@@ -100,10 +102,14 @@ export class AgentActionManager extends BaseAgentManager {
 
 		let promise: Promise<void> | null = null
 		let diff: RecordsDiff<TLRecord>
+		let contract: ActionContract | null = null
 		try {
 			diff = editor.store.extractingChanges(() => {
 				promise = util.applyAction(structuredClone(action), helpers) ?? null
 			})
+			if (action.complete) {
+				contract = util.getActionContract(structuredClone(action), helpers)
+			}
 		} catch (error) {
 			// always toast the error
 			this.agent.onError(error)
@@ -154,6 +160,6 @@ export class AgentActionManager extends BaseAgentManager {
 			})
 		}
 
-		return { diff, promise }
+		return { diff, promise, contract }
 	}
 }

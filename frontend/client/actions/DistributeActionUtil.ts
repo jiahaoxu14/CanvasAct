@@ -3,6 +3,7 @@ import { DistributeAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { resolveTargetSelectorForAction } from './resolveTargets'
 
 export const DistributeActionUtil = registerActionUtil(
 	class DistributeActionUtil extends AgentActionUtil<DistributeAction> {
@@ -16,12 +17,22 @@ export const DistributeActionUtil = registerActionUtil(
 		}
 
 		override sanitizeAction(action: Streaming<DistributeAction>, helpers: AgentHelpers) {
-			action.shapeIds = helpers.ensureShapeIdsExist(action.shapeIds ?? [])
+			if (!action.complete) return action
+			const shapeIds = resolveTargetSelectorForAction({
+				agent: this.agent,
+				helpers,
+				selector: action.targetSelector,
+				shapeIds: action.shapeIds,
+				actionType: 'distribute',
+				min: 2,
+			})
+			if (!shapeIds) return null
+			action.shapeIds = shapeIds
 			return action
 		}
 
 		override applyAction(action: Streaming<DistributeAction>) {
-			if (!action.complete) return
+			if (!action.complete || !action.shapeIds) return
 
 			this.editor.distributeShapes(
 				action.shapeIds.map((id) => `shape:${id}` as TLShapeId),

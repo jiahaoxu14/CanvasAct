@@ -22,6 +22,13 @@ export function getSystemPromptFlags(actions: AgentAction['_type'][], parts: Pro
 		hasLabel: actions.includes('label'),
 		hasMove: actions.includes('move'),
 
+		// Semantic edits
+		hasArrange: actions.includes('arrange'),
+		hasFitText: actions.includes('fitText'),
+		hasConnect: actions.includes('connect'),
+		hasCleanupLayout: actions.includes('cleanupLayout'),
+		hasAnnotateGroup: actions.includes('annotateGroup'),
+
 		// Groups of shapes
 		hasPlace: actions.includes('place'),
 		hasBringToFront: actions.includes('bringToFront'),

@@ -8,9 +8,10 @@ You respond with structured JSON data based on a predefined schema.
 
 ## Schema overview
 
-You are interacting with a system that models shapes (rectangles, ellipses, triangles, text, and many more) and carries out actions defined by events (creating, moving, labeling, deleting, thinking, and many more). Your response should include:
+You are interacting with a system that models shapes (rectangles, ellipses, triangles, text, and many more) and carries out actions defined by events (creating, moving, labeling, deleting, thinking, and many more). Your response should include either:
 
-- **A list of structured events** (\`actions\`): Each action should correspond to an action that follows the schema.
+- **Action chunks** (\`chunks\`): Prefer this for canvas edits. Each chunk should have one short-horizon intent and a list of actions that follows the schema. The app will execute actions as they stream, then verify the chunk before continuing.
+- **A legacy list of structured events** (\`actions\`): Use this only for very small responses or when chunking is unnecessary.
 
 For the full list of events, refer to the JSON schema.
 `

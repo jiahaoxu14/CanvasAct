@@ -3,6 +3,7 @@ import { BringToFrontAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { resolveTargetSelectorForAction } from './resolveTargets'
 
 export const BringToFrontActionUtil = registerActionUtil(
 	class BringToFrontActionUtil extends AgentActionUtil<BringToFrontAction> {
@@ -16,12 +17,21 @@ export const BringToFrontActionUtil = registerActionUtil(
 		}
 
 		override sanitizeAction(action: Streaming<BringToFrontAction>, helpers: AgentHelpers) {
-			action.shapeIds = helpers.ensureShapeIdsExist(action.shapeIds ?? [])
+			if (!action.complete) return action
+			const shapeIds = resolveTargetSelectorForAction({
+				agent: this.agent,
+				helpers,
+				selector: action.targetSelector,
+				shapeIds: action.shapeIds,
+				actionType: 'bringToFront',
+			})
+			if (!shapeIds) return null
+			action.shapeIds = shapeIds
 			return action
 		}
 
 		override applyAction(action: Streaming<BringToFrontAction>) {
-			if (!action.shapeIds) return
+			if (!action.complete || !action.shapeIds) return
 			this.editor.bringToFront(action.shapeIds.map((shapeId) => `shape:${shapeId}` as TLShapeId))
 		}
 	}

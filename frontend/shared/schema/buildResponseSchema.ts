@@ -1,4 +1,5 @@
 import z from 'zod'
+import { buildActionChunkSchema } from './ActionChunkSchemas'
 import { ActionMeta, AgentAction, getActionSchemaForMode } from '../types/AgentAction'
 
 /**
@@ -37,9 +38,15 @@ export function buildResponseSchema(actionTypes: AgentAction['_type'][], mode: s
 	}
 
 	const actionSchema = z.union(actionSchemas)
-	const schema = z.object({
-		actions: z.array(actionSchema),
-	})
+	const actionChunkSchema = buildActionChunkSchema(actionSchema)
+	const schema = z.union([
+		z.object({
+			chunks: z.array(actionChunkSchema).min(1),
+		}),
+		z.object({
+			actions: z.array(actionSchema).min(1),
+		}),
+	])
 
 	return stripInternalMeta(z.toJSONSchema(schema, { reused: 'ref' }))
 }
