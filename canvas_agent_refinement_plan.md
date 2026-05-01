@@ -405,263 +405,104 @@ Metrics:
 
 ## Evaluation Plan
 
-Use evaluation to answer four questions:
+Use evaluation to answer one question: does each refinement improve task success, canvas quality, or cost without making common cases worse?
 
-1. Does the agent understand the canvas state better?
-2. Does it choose safer and more appropriate actions?
-3. Does the closed-loop observe-execute-verify cycle reduce visible errors?
-4. Does the refinement improve real task completion without excessive prompt cost or repair loops?
+Run evals in two layers:
 
-The evaluation should be layered. Start with deterministic offline tests, then add model-in-the-loop task evals, then add trajectory-based regression tracking.
+- Offline evals: deterministic tests of observation building, selector resolution, action diffs, and lint/verifier behavior. These do not call a model.
+- Model-in-the-loop evals: fixed user tasks on fixed canvas fixtures. These compare final canvas properties, not exact pixels.
 
-### 1. Observation Quality Evals
+Every run should compare the same fixtures across these configs:
 
-These evaluate `CanvasObservation` without calling a model.
+- `baseline`: implementation before P0
+- `p0_observation`: baseline plus `CanvasObservation`
+- `p1_selectors`: P0 plus target selectors
+- `p2_actions_verifier`: P1 plus semantic actions and verifier
+- `p3_chunk_loop`: P2 plus chunked execution and trajectory logging
 
-Recommended fixtures:
+### Metrics Matrix
 
-- partially visible shape at each viewport edge
-- shape fully inside viewport
-- shape just outside viewport
-- selected shape outside viewport
-- context shape outside viewport
-- nested/grouped/frame-contained shapes
-- rotated shapes
-- overlapping shapes with different z-order
-- arrows with both endpoints bound
-- arrows with one or both endpoints missing
-- text labels inside and outside containers
-- mixed dense canvas with multiple clusters
+| Area | What it tests | Quantitative metrics | Qualitative metrics | Acceptance target |
+| --- | --- | --- | --- | --- |
+| Observation quality | Whether `CanvasObservation` captures the right canvas state | object recall; visibility accuracy; relation precision/recall; screenshot box IoU; serialized byte size; repeat-run determinism | observation is readable enough for prompt debugging | selected/context object recall = 100%; partial-visible recall = 100%; visibility accuracy >= 95%; arrow/containment relation F1 >= 95%; mean screenshot-box IoU >= 0.85; repeated builds match exactly; dense observations stay within configured object/tile limits |
+| Target resolution | Whether selectors resolve references like “these”, “this label”, or “the connected node” | selector accuracy; ambiguity safe-fail rate; false-target rate; ids emitted per model action | ambiguous failures are understandable and recoverable | common-reference accuracy >= 95%; false-target rate <= 1%; ambiguous selectors safe-fail >= 95%; pan/zoom invariant fixtures produce identical resolved ids |
+| Action correctness | Whether local actions produce the intended canvas diff | postcondition pass rate; unrelated-shape mutation count; geometry error in px/degrees; id uniqueness | resulting edits match the user intent without surprising side effects | postconditions pass >= 95%; unrelated-shape mutations = 0; position/size error <= 1 px; rotation error <= 0.5 degrees; created ids unique = 100% |
+| Visual lint and verification | Whether final canvases avoid obvious visual defects | lint count before/after; overlap area; unbound-arrow count; label containment rate; repair-loop count | layout is readable and relationships are visually clear | final critical lints = 0 for supported checks; total lint count does not increase in >= 95% of runs; repair converges within 2 loops |
+| Closed-loop tasks | Whether the full agent completes real canvas tasks | task success rate; first-pass success rate; success after repair; model calls; primitive edits; prompt tokens; latency to first action; total latency | final canvas satisfies request, keeps important content, and avoids unnecessary edits | success improves over baseline by >= 15 percentage points or reduces cost by >= 20% with no success regression above 3 percentage points |
+| Regression and ablation | Whether a feature helps enough to stay enabled | absolute success rate; delta vs baseline; token delta; latency delta; cases made worse | failures cluster into understandable categories | each phase improves at least one target metric and does not materially regress task success, lint quality, or cost |
 
-Metrics:
+Metric definitions:
 
-- object recall: expected shapes present in observation
-- visibility accuracy: `visible`, `partial`, `offscreen-near`, `offscreen-far`, `occluded`
-- relation precision/recall: arrow links, containment, overlap, alignment, label-of
-- screenshot grounding accuracy: object screenshot boxes match rendered objects
-- prompt-size budget: tokens or serialized byte size per observation
+- `object recall = expected observed objects / expected fixture objects`
+- `visibility accuracy = objects with expected visibility label / labeled objects`
+- `relation F1` covers arrow links, containment, overlap, alignment, and label-of relations.
+- `screenshot box IoU` compares observation boxes with rendered object bounds.
+- `repeat-run determinism` means the same fixture produces identical normalized observation JSON.
+- `false-target rate = actions that modify an unintended object / all target-resolved actions`
+- `postcondition pass rate = actions satisfying declared verifier checks / actions with checks`
+- `lint delta = final lint count - initial lint count`; negative is better.
 
-Pass criteria for P0:
+### Core Fixtures
 
-- selected/context shapes are always included
-- partially visible shapes are never dropped
-- bound arrows expose explicit source/target relations
-- relation graph is deterministic across repeated builds
-- observation stays bounded on dense canvases by using tiles/detail levels
+Use a small fixture set that covers high-risk canvas states:
 
-### 2. Action Schema and Target Resolution Evals
+- viewport edges: fully visible, partially visible, just-offscreen, and far-offscreen shapes
+- selection/context: selected offscreen objects and context objects outside the viewport
+- structure: grouped/frame-contained shapes, text inside containers, text outside containers
+- geometry: rotated shapes, overlapping shapes with z-order, dense multi-cluster canvases
+- arrows: both endpoints bound, one endpoint missing, both endpoints missing, duplicate arrows
+- ambiguity: duplicate labels, nearby similar objects, connected offscreen targets
 
-These evaluate whether the agent can refer to objects robustly without manually enumerating ids.
+### Initial Eval Set
 
-Recommended fixtures:
+Build these first; they are enough to measure the main P0-P3 gains without overbuilding the harness.
 
-- selected shapes with request “align these”
-- region context with request “clean up this area”
-- duplicate text labels with request “move the label inside the box”
-- multiple nearby candidates with one ambiguous selector
-- connected nodes with request “repair arrows connected to this”
-- offscreen target connected to visible shape
+Run the local deterministic suite with `npm run eval:canvas-agent` from `frontend/`. It covers offline observation, selector, action, lint, and synthetic trajectory checks. Live model-in-the-loop runs should write the same trajectory shape and can be compared with the same metrics.
 
-Metrics:
+| Eval id | Layer | Primary metric | Example pass condition |
+| --- | --- | --- | --- |
+| `observation_partial_visibility` | offline | partial-visible recall | every edge-clipped shape appears with `visibility = partial` |
+| `observation_arrow_relations` | offline | relation F1 | bound arrows expose exact source/target ids; unbound endpoints are reported as missing |
+| `observation_selected_offscreen` | offline | selected/context recall | selected and context objects survive viewport filtering |
+| `selector_selected_shapes` | offline | selector accuracy | “these” resolves to the selected shape ids and no others |
+| `selector_ambiguous_label` | offline | ambiguity safe-fail rate | duplicate text labels produce a safe ambiguity result, not a random edit |
+| `action_align_selected` | offline | postcondition pass rate | selected shapes share the requested alignment within 1 px |
+| `lint_text_overlap` | offline | lint delta | overlapping labels are detected and the verifier reports a failing postcondition |
+| `task_fix_unbound_arrows` | trajectory, then model-in-loop | task success and repair loops | final canvas has zero unbound arrows and uses no more than 2 repair loops |
+| `task_clean_cluster` | trajectory, then model-in-loop | rubric score and lint delta | human rubric score >= 3, lint count decreases, text content is preserved |
 
-- selector resolution accuracy
-- ambiguity detection rate
-- false-target rate
-- number of ids the model must emit
-- deterministic resolver success rate
+### Task Rubric
 
-Pass criteria for P1:
+Use automatic metrics for pass/fail, then add a compact human score only for model-in-the-loop tasks:
 
-- selected/context selectors resolve correctly in common references like “this”, “these”, and “here”
-- ambiguous selectors fail safely instead of editing the wrong object
-- target resolution is stable under pan/zoom and coordinate offset changes
+- 0: failed task, edited wrong objects, or lost important content
+- 1: partially completed but has major semantic or visual errors
+- 2: mostly completed with noticeable layout or relationship defects
+- 3: correct result with minor cosmetic issues
+- 4: correct, readable, visually clean, and verified
 
-### 3. Primitive Action Correctness Evals
+Review dimensions for the qualitative note:
 
-These evaluate existing action utils and any new local resolvers.
+- request satisfaction
+- readability
+- relationship clarity
+- unnecessary edits
+- communication quality
 
-Recommended fixtures:
+Target: average score >= 3.5, no critical task below 3, and no repeated failure category across more than 10% of runs.
 
-- create each supported shape type
-- move by anchor
-- resize around origin
-- rotate around origin
-- place on each side of reference shape
-- align/distribute/stack groups
-- create and repair arrows
-- update labels and text width
+### Run Artifacts
 
-Metrics:
+Every eval run should save one trajectory record per task:
 
-- expected diff matches actual diff
-- created ids exist and remain unique
-- action preserves unrelated shapes
-- no coordinate jitter after round/unround cycles
-- action result satisfies declared postconditions
+- config name and git commit
+- fixture id and request text
+- initial canvas snapshot, observation, and screenshot
+- model response, action chunks, primitive actions, and diffs
+- verifier results and final observation
+- metric results, latency, token counts, and human score if reviewed
 
-Pass criteria for P2:
-
-- layout actions produce deterministic geometry
-- primitive actions do not modify unrelated objects
-- local action resolver emits fewer primitive actions than direct model control for common layout tasks
-
-### 4. Visual Quality and Lint Evals
-
-These evaluate whether final canvases look correct and avoid common visual failures.
-
-Use existing lint categories as the first automatic score:
-
-- text overflow / `growY`
-- overlapping text
-- unbound or friendless arrows
-
-Add new visual checks:
-
-- label outside container
-- arrow crossing through unrelated shapes
-- duplicate arrows between same source/target
-- objects touching when a gap is expected
-- excessive whitespace or unbalanced layout
-- unreadable small text
-- shape/text color contrast issues if theme data is available
-
-Metrics:
-
-- lint count before vs after task
-- postcondition pass rate
-- overlap area
-- arrow binding success rate
-- label containment rate
-- repair loop count
-
-Pass criteria:
-
-- refinement should reduce lints, not merely complete actions
-- repair loops should converge instead of repeatedly editing the same failure
-- verifier should catch obvious visual regressions before final message
-
-### 5. Closed-Loop Task Evals
-
-These are model-in-the-loop tasks. They should run against fixed canvas fixtures and compare final canvas state to expected properties rather than exact pixels.
-
-Recommended task set:
-
-- “Arrange these notes into three columns by theme.”
-- “Make this flowchart readable and connect the steps.”
-- “Move the labels inside their boxes.”
-- “Clean up this messy cluster without changing the text.”
-- “Find the related offscreen node and connect it to this one.”
-- “Create a 4-step process diagram from these selected notes.”
-- “Fix the arrows that are not connected.”
-- “Make the selected cards evenly spaced.”
-- “Summarize this cluster with a heading and keep all notes visible.”
-- “Review your work and repair any overlap.”
-
-Metrics:
-
-- task success rate
-- first-pass success rate
-- success after repair
-- average number of model calls
-- average number of primitive edits
-- average repair loops
-- final lint count
-- prompt token cost
-- latency to first action
-- total task latency
-
-Score each task with a rubric:
-
-- 0: failed or edited wrong objects
-- 1: partial completion with major visual or semantic errors
-- 2: mostly correct with minor layout defects
-- 3: correct, readable, and verified
-
-### 6. Regression and Ablation Evals
-
-Run the same tasks against multiple configurations:
-
-- baseline current implementation
-- `CanvasObservation` only
-- observation plus target selectors
-- observation plus selectors plus verifier
-- full action chunking loop
-
-Track whether each refinement improves the same fixtures instead of only adding complexity.
-
-Recommended ablations:
-
-- without screenshot
-- without relation graph
-- without peripheral tiles
-- without verifier
-- without target selectors
-- without high-level layout actions
-
-Metrics:
-
-- absolute success rate
-- improvement over baseline
-- prompt cost delta
-- added latency
-- number of cases made worse
-
-Pass criteria:
-
-- each phase should improve at least one target metric without materially worsening core task success
-- if a feature improves rare cases but increases common-case failures, keep it disabled by default
-
-### 7. Human Review Evals
-
-Use human review only where automatic checks are weak.
-
-Review dimensions:
-
-- does the final canvas satisfy the user request?
-- is the layout readable?
-- are relationships visually clear?
-- did the agent avoid unnecessary edits?
-- did the agent communicate appropriately?
-
-Use a small 1–5 scale and collect notes. Human review should be used to calibrate automatic metrics, not replace them.
-
-### 8. Trajectory Dataset
-
-Every eval run should save:
-
-- initial canvas snapshot
-- initial observation
-- request text
-- model actions or action chunks
-- primitive actions actually applied
-- diffs
-- verifier results
-- final observation
-- final screenshot
-- metric results
-- human rating if available
-
-Use these trajectories for:
-
-- regression tests
-- prompt examples
-- failure clustering
-- future fine-tuning or preference data
-
-### Recommended Initial Eval Set
-
-For the first implementation pass, build only these evals:
-
-1. `observation_partial_visibility`: verifies partial shapes are represented.
-2. `observation_arrow_relations`: verifies bound/unbound arrow relations.
-3. `observation_selected_offscreen`: verifies selected/context shapes survive viewport filtering.
-4. `selector_selected_shapes`: verifies “these” resolves to selected objects.
-5. `lint_text_overlap`: verifies overlap detection and repair scoring.
-6. `task_align_selected`: simple model-in-loop layout task.
-7. `task_fix_unbound_arrows`: model-in-loop repair task.
-8. `task_clean_cluster`: model-in-loop multi-step cleanup task.
-
-This is enough to measure P0/P1 gains without overbuilding the eval harness.
+Use these records for regression tests, prompt examples, failure clustering, and future preference data.
 
 ## Implementation Phases
 

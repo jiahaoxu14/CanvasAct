@@ -1,7 +1,7 @@
 import type { CanvasObservationRelationType, CanvasObservationVisibilityState } from '../format/CanvasObservation'
 import type { SimpleShapeId } from '../types/ids-schema'
 
-export type CanvasAgentEvalKind = 'observation' | 'selector' | 'lint' | 'task'
+export type CanvasAgentEvalKind = 'observation' | 'selector' | 'action' | 'lint' | 'task'
 
 export interface CanvasAgentEvalExpectedRelation {
 	type: CanvasObservationRelationType
@@ -13,11 +13,17 @@ export interface CanvasAgentEvalExpectations {
 	objectIds?: SimpleShapeId[]
 	visibility?: Partial<Record<SimpleShapeId, CanvasObservationVisibilityState>>
 	relations?: CanvasAgentEvalExpectedRelation[]
+	expectAmbiguousResolution?: boolean
 	requiresChunkedActions?: boolean
 	maxRepairLoopCount?: number
 	maxVerificationFailures?: number
+	minVerificationFailures?: number
 	minPostconditionPassRate?: number
+	maxGeometryErrorPx?: number
+	maxUnrelatedShapeMutations?: number
+	maxFalseTargetRate?: number
 	maxFinalLintCount?: number
+	minFinalLintCount?: number
 }
 
 export interface CanvasAgentEvalFixture {
@@ -48,12 +54,22 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 		description: 'Bound and unbound arrow endpoints appear as explicit relations.',
 		request: 'Inspect the arrows.',
 		expect: {
-			objectIds: ['start' as SimpleShapeId, 'end' as SimpleShapeId, 'bound-arrow' as SimpleShapeId],
+			objectIds: [
+				'start' as SimpleShapeId,
+				'end' as SimpleShapeId,
+				'bound-arrow' as SimpleShapeId,
+				'unbound-arrow' as SimpleShapeId,
+			],
 			relations: [
 				{
 					type: 'arrow-connects',
 					sourceId: 'start' as SimpleShapeId,
 					targetId: 'end' as SimpleShapeId,
+				},
+				{
+					type: 'unbound-arrow-endpoint',
+					sourceId: 'unbound-arrow' as SimpleShapeId,
+					targetId: 'unbound-arrow' as SimpleShapeId,
 				},
 			],
 		},
@@ -80,24 +96,36 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 		},
 	},
 	{
-		id: 'lint_text_overlap',
-		kind: 'lint',
-		description: 'Text overlap and overflow repairs reduce final lint count.',
-		request: 'Fix the overlapping text.',
+		id: 'selector_ambiguous_label',
+		kind: 'selector',
+		description: 'Ambiguous duplicate labels fail safely instead of choosing an arbitrary target.',
+		request: 'Move the duplicate label.',
 		expect: {
-			maxFinalLintCount: 0,
-			maxVerificationFailures: 0,
+			objectIds: ['duplicate-label-a' as SimpleShapeId, 'duplicate-label-b' as SimpleShapeId],
+			expectAmbiguousResolution: true,
+			maxFalseTargetRate: 0,
 		},
 	},
 	{
-		id: 'task_align_selected',
-		kind: 'task',
-		description: 'Selected shapes can be aligned through a short chunked edit.',
-		request: 'Make the selected cards evenly spaced.',
+		id: 'action_align_selected',
+		kind: 'action',
+		description: 'Selected shapes can be aligned deterministically without mutating unrelated shapes.',
+		request: 'Align these to the left.',
 		expect: {
-			requiresChunkedActions: true,
-			maxRepairLoopCount: 1,
+			objectIds: ['align-a' as SimpleShapeId, 'align-b' as SimpleShapeId],
 			minPostconditionPassRate: 1,
+			maxGeometryErrorPx: 1,
+			maxUnrelatedShapeMutations: 0,
+		},
+	},
+	{
+		id: 'lint_text_overlap',
+		kind: 'lint',
+		description: 'Overlapping labels are detected and reported by local verification.',
+		request: 'Detect the overlapping text.',
+		expect: {
+			minFinalLintCount: 1,
+			minVerificationFailures: 1,
 		},
 	},
 	{
@@ -108,6 +136,7 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 		expect: {
 			requiresChunkedActions: true,
 			maxFinalLintCount: 0,
+			maxRepairLoopCount: 2,
 			minPostconditionPassRate: 1,
 		},
 	},

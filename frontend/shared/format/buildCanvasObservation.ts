@@ -232,9 +232,18 @@ function getVisibilityState(
 	viewportBounds: Box,
 	nearDistance: number
 ): CanvasObservationVisibilityState {
-	if (viewportBounds.includes(bounds)) return 'visible'
+	if (boxFullyContains(viewportBounds, bounds)) return 'visible'
 	if (Box.Collides(viewportBounds, bounds)) return 'partial'
 	return distanceBetweenBoxes(viewportBounds, bounds) <= nearDistance ? 'offscreen-near' : 'offscreen-far'
+}
+
+function boxFullyContains(container: Box, child: Box) {
+	return (
+		child.minX >= container.minX &&
+		child.minY >= container.minY &&
+		child.maxX <= container.maxX &&
+		child.maxY <= container.maxY
+	)
 }
 
 function getDetailLevel(
