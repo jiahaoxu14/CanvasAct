@@ -47,7 +47,7 @@ type EvalCaseResult = {
 }
 
 const repoRoot = resolve(process.cwd(), '..')
-const reportPath = resolve(repoRoot, 'model_in_loop_eval_report.md')
+const reportPath = resolve(repoRoot, 'docs', 'model_in_loop_eval_report.md')
 const artifactPath = resolve(process.cwd(), '.tsbuild', 'evals', 'model-in-loop.json')
 const modelName = getModelName()
 loadDevVars()
@@ -119,6 +119,7 @@ const artifact = {
 }
 
 mkdirSync(dirname(artifactPath), { recursive: true })
+mkdirSync(dirname(reportPath), { recursive: true })
 writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`)
 writeFileSync(reportPath, buildMarkdownReport(artifact))
 
@@ -468,7 +469,7 @@ function buildMarkdownReport(artifact: {
 	)
 	lines.push('')
 	lines.push(
-		'The configs are prompt/action ablations in the current codebase. They are not exact historical binaries for P0/P1/P2/P3, and P4 is not implemented in this repo yet.'
+		'The configs are prompt/action ablations in the current codebase. They are not exact historical binaries for P0/P1/P2/P3.'
 	)
 	lines.push('')
 	lines.push('## Summary')
@@ -514,7 +515,7 @@ function buildMarkdownReport(artifact: {
 	} else {
 		if (allErrors.length > 0) {
 			lines.push(
-				`${allErrors.length} of ${artifact.results.length} live model calls failed, so rankings that include those failures are not definitive. Treat this run as a partial smoke test rather than a final P0-P4 comparison.`
+				`${allErrors.length} of ${artifact.results.length} live model calls failed, so rankings that include those failures are not definitive. Treat this run as a partial smoke test rather than a final P0-P3 comparison.`
 			)
 			lines.push('')
 		}
@@ -533,7 +534,6 @@ function buildMarkdownReport(artifact: {
 	lines.push('- This run uses one sample per task/config.')
 	lines.push('- It scores returned actions structurally; it does not yet replay every model action into the editor and visually inspect the final canvas.')
 	lines.push('- The config labels approximate refinement levels using prompt/action ablations in the current codebase.')
-	lines.push('- P4 has not been defined or implemented in `canvas_agent_refinement_plan.md`, so it is not evaluated here.')
 	lines.push('')
 	return `${lines.join('\n')}\n`
 }

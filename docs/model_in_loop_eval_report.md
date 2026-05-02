@@ -8,7 +8,7 @@ JSON artifact: `frontend/.tsbuild/evals/model-in-loop.json`
 
 This is a live model-in-the-loop smoke eval. It calls the configured model through `AgentService`, feeds fixed canvas observations, collects completed structured actions, and scores whether the returned actions target the expected objects.
 
-The configs are prompt/action ablations in the current codebase. They are not exact historical binaries for P0/P1/P2/P3, and P4 is not implemented in this repo yet.
+The configs are prompt/action ablations in the current codebase. They are not exact historical binaries for P0/P1/P2/P3.
 
 ## Summary
 
@@ -57,5 +57,3 @@ Use this as a directional signal only. A stronger experiment should run more tas
 - This run uses one sample per task/config.
 - It scores returned actions structurally; it does not yet replay every model action into the editor and visually inspect the final canvas.
 - The config labels approximate refinement levels using prompt/action ablations in the current codebase.
-- P4 has not been defined or implemented in `canvas_agent_refinement_plan.md`, so it is not evaluated here.
-
