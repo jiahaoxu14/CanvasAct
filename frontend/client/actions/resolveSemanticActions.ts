@@ -458,6 +458,10 @@ function widenShapeForText(editor: Editor, shape: TLShape, maxWidth?: number) {
 }
 
 function wrapTextShape(editor: Editor, shape: TLShape, maxWidth?: number) {
+	if (shape.type !== 'text') {
+		widenShapeForText(editor, shape, maxWidth)
+		return
+	}
 	const bounds = editor.getShapePageBounds(shape)
 	const width = maxWidth ?? Math.max(180, Math.min(480, bounds?.w ?? 240))
 	editor.updateShape({

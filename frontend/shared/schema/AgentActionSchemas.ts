@@ -289,13 +289,15 @@ export const MoveAction = z
 		_type: z.literal('move'),
 		intent: z.string(),
 		anchor: FocusedTextAnchorSchema,
-		shapeId: SimpleShapeIdSchema,
+		shapeId: SimpleShapeIdSchema.optional(),
+		targetSelector: TargetSelectorSchema.optional(),
 		x: z.number(),
 		y: z.number(),
 	})
 	.meta({
 		title: 'Move',
-		description: 'The agent moves a shape to a new position.',
+		description:
+			'The agent moves one shape to a new position. Prefer targetSelector with expect:"one" when the user refers to a selected, contextual, or text-matched target; use shapeId only when the id is unambiguous.',
 		_systemPromptCategory: 'edit',
 	})
 

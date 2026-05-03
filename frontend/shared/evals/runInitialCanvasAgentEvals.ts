@@ -12,8 +12,10 @@ import type { AgentTrajectory } from '../types/AgentTrajectory'
 import type { SimpleShapeId } from '../types/ids-schema'
 import { buildCanvasObservation } from '../format/buildCanvasObservation'
 import type { CanvasObservation } from '../format/CanvasObservation'
+import type { AgentHelpers } from '../../client/AgentHelpers'
 import type { TldrawAgent } from '../../client/agent/TldrawAgent'
-import { resolveTargets } from '../../client/actions/resolveTargets'
+import { MoveActionUtil } from '../../client/actions/MoveActionUtil'
+import { resolveTargetSelectorForAction, resolveTargets } from '../../client/actions/resolveTargets'
 import { verifyActionResult } from '../../client/actions/verifyActionResult'
 import { INITIAL_CANVAS_AGENT_EVAL_FIXTURES } from './CanvasAgentEvalFixtures'
 import {
@@ -105,6 +107,16 @@ export function runInitialCanvasAgentEvals(): InitialCanvasAgentEvalRun {
 	withEditor((editor) => {
 		setupAlignSelectedFixture(editor)
 		actionResults.action_align_selected = runAlignSelectedEval(editor)
+	})
+
+	withEditor((editor) => {
+		setupAmbiguousLabelFixture(editor)
+		actionResults.action_move_ambiguous_selector = runMoveAmbiguousSelectorEval(editor)
+	})
+
+	withEditor((editor) => {
+		setupAmbiguousLabelFixture(editor)
+		actionResults.action_move_ambiguous_hardcoded = runMoveAmbiguousHardcodedEval(editor)
 	})
 
 	withEditor((editor) => {
@@ -232,6 +244,84 @@ function runOverlapLintEval(editor: Editor): CanvasAgentEvalLintResult {
 		initialLintCount: 1,
 		finalLintCount: verification.failures.length > 0 ? 1 : 0,
 		verificationFailureCount: verification.failures.length,
+	}
+}
+
+function runMoveAmbiguousSelectorEval(editor: Editor): CanvasAgentEvalActionResult {
+	const before = [
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-a'))?.toJson(),
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-b'))?.toJson(),
+	]
+	const scheduledMessages: string[] = []
+	const agent = createEvalAgent(editor, scheduledMessages)
+	const result = resolveTargetSelectorForAction({
+		agent,
+		helpers: {
+			ensureShapeIdsExist: (shapeIds: SimpleShapeId[]) =>
+				shapeIds.filter((shapeId) => editor.getShape(toTlShapeId(shapeId))),
+		} as unknown as Parameters<typeof resolveTargetSelectorForAction>[0]['helpers'],
+		selector: {
+			_type: 'text',
+			text: 'Duplicate label',
+			match: 'exact',
+			searchNotes: true,
+			expect: 'one',
+		} satisfies TargetSelector,
+		actionType: 'move',
+		min: 1,
+		max: 1,
+	})
+	const after = [
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-a'))?.toJson(),
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-b'))?.toJson(),
+	]
+	const unrelatedShapeMutationCount = JSON.stringify(before) === JSON.stringify(after) ? 0 : 1
+
+	return {
+		postconditionPassRate: result === null ? 1 : 0,
+		unrelatedShapeMutationCount,
+		verificationFailureCount: scheduledMessages.length,
+	}
+}
+
+function runMoveAmbiguousHardcodedEval(editor: Editor): CanvasAgentEvalActionResult {
+	const before = [
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-a'))?.toJson(),
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-b'))?.toJson(),
+	]
+	const scheduledMessages: string[] = []
+	const agent = createEvalAgent(editor, scheduledMessages, {
+		agentMessages: ['Move the Duplicate label.'],
+		userMessages: ['Move the Duplicate label.'],
+	})
+	const util = new MoveActionUtil(agent)
+	const sanitized = util.sanitizeAction(
+			{
+			_type: 'move',
+			complete: true,
+			time: 0,
+			intent: 'Move the Duplicate label.',
+				shapeId: 'duplicate-label-a' as SimpleShapeId,
+				anchor: 'center',
+				x: 140,
+				y: 120,
+		},
+			{
+				ensureShapeIdsExist: (shapeIds: SimpleShapeId[]) =>
+					shapeIds.filter((shapeId) => editor.getShape(toTlShapeId(shapeId))),
+				ensureValueIsNumber: (value: unknown) => (typeof value === 'number' ? value : null),
+			} as unknown as AgentHelpers
+		)
+	const after = [
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-a'))?.toJson(),
+		editor.getShapePageBounds(toTlShapeId('duplicate-label-b'))?.toJson(),
+	]
+	const unrelatedShapeMutationCount = JSON.stringify(before) === JSON.stringify(after) ? 0 : 1
+
+	return {
+		postconditionPassRate: sanitized === null ? 1 : 0,
+		unrelatedShapeMutationCount,
+		verificationFailureCount: scheduledMessages.length,
 	}
 }
 
@@ -486,12 +576,29 @@ function createHeadlessEditor() {
 	})
 }
 
-function createEvalAgent(editor: Editor): TldrawAgent {
+function createEvalAgent(
+	editor: Editor,
+	scheduledMessages: string[] = [],
+	request: { agentMessages: string[]; userMessages: string[] } | null = null
+): TldrawAgent {
 	return {
 		editor,
-		requests: { getActiveRequest: () => null },
+		requests: {
+			getActiveRequest: () =>
+				request
+					? {
+							...request,
+							bounds: VIEWPORT,
+							data: [],
+							source: 'user',
+							contextItems: [],
+						}
+					: null,
+		},
 		context: { getItems: () => [] },
-		schedule: () => undefined,
+		schedule: (message: { message: string }) => {
+			scheduledMessages.push(message.message)
+		},
 	} as unknown as TldrawAgent
 }
 

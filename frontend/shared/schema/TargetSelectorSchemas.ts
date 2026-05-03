@@ -100,7 +100,8 @@ export const TextTargetSelectorSchema = z
 	})
 	.meta({
 		title: 'Text Selector',
-		description: 'Resolve shapes whose visible text, and optionally note, matches the query.',
+		description:
+			'Resolve shapes whose visible text, and optionally note, matches the query. When the user names a target by text and exactly one shape should be edited, use expect:"one" so duplicate labels fail safely instead of editing one arbitrary match.',
 	})
 
 export const TypeTargetSelectorSchema = z
@@ -191,7 +192,7 @@ export const TargetSelectorSchema = z
 	.meta({
 		title: 'Target Selector',
 		description:
-			'A deterministic selector for resolving target shapes locally from selection, context, ids, geometry, text, type, relations, tiles, or proximity.',
+			'A deterministic selector for resolving target shapes locally from selection, context, ids, geometry, text, type, relations, tiles, or proximity. Prefer selectors over hard-coded ids when user language could match multiple objects; set expect:"one" when ambiguity should stop the edit.',
 	})
 
 export type TargetSelector = z.infer<typeof TargetSelectorSchema>

@@ -47,6 +47,7 @@ export function resolveTargetSelectorForAction({
 	shapeIds,
 	actionType,
 	min = 1,
+	max,
 }: {
 	agent: TldrawAgent
 	helpers: AgentHelpers
@@ -54,6 +55,7 @@ export function resolveTargetSelectorForAction({
 	shapeIds?: SimpleShapeId[]
 	actionType: string
 	min?: number
+	max?: number
 }): SimpleShapeId[] | null {
 	if (!selector) {
 		const existingIds = helpers.ensureShapeIdsExist(shapeIds ?? [])
@@ -65,11 +67,23 @@ export function resolveTargetSelectorForAction({
 			)
 			return null
 		}
+		if (max !== undefined && existingIds.length > max) {
+			scheduleTargetResolutionFailure(
+				agent,
+				actionType,
+				`Expected at most ${max} target shape${max === 1 ? '' : 's'}, but ${existingIds.length} were provided.`
+			)
+			return null
+		}
 		return existingIds
 	}
 
 	const result = resolveTargets(agent, selector, { helpers })
-	if (result.status === 'ok' && result.shapeIds.length >= min) {
+	if (
+		result.status === 'ok' &&
+		result.shapeIds.length >= min &&
+		(max === undefined || result.shapeIds.length <= max)
+	) {
 		return result.shapeIds
 	}
 
@@ -77,7 +91,7 @@ export function resolveTargetSelectorForAction({
 		agent,
 		actionType,
 		result.reason ??
-			`Selector resolved ${result.shapeIds.length} target shape${result.shapeIds.length === 1 ? '' : 's'}.`
+			`Selector resolved ${result.shapeIds.length} target shape${result.shapeIds.length === 1 ? '' : 's'}; expected ${max === undefined ? `at least ${min}` : `${min}-${max}`}.`
 	)
 	return null
 }

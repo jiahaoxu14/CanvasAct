@@ -119,6 +119,30 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 		},
 	},
 	{
+		id: 'action_move_ambiguous_selector',
+		kind: 'action',
+		description: 'Ambiguous move selectors fail safely instead of moving one matching shape.',
+		request: 'Move the duplicate label.',
+		expect: {
+			objectIds: ['duplicate-label-a' as SimpleShapeId, 'duplicate-label-b' as SimpleShapeId],
+			minPostconditionPassRate: 1,
+			maxUnrelatedShapeMutations: 0,
+			minVerificationFailures: 1,
+		},
+	},
+	{
+		id: 'action_move_ambiguous_hardcoded',
+		kind: 'action',
+		description: 'Hard-coded move ids are rejected when the request text matches duplicate labels.',
+		request: 'Move the duplicate label.',
+		expect: {
+			objectIds: ['duplicate-label-a' as SimpleShapeId, 'duplicate-label-b' as SimpleShapeId],
+			minPostconditionPassRate: 1,
+			maxUnrelatedShapeMutations: 0,
+			minVerificationFailures: 1,
+		},
+	},
+	{
 		id: 'lint_text_overlap',
 		kind: 'lint',
 		description: 'Overlapping labels are detected and reported by local verification.',

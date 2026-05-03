@@ -211,11 +211,20 @@ ${flagged(
 			flags.hasBringToFront ||
 			flags.hasSendToBack ||
 			flags.hasRotate ||
-			flags.hasResize),
+			flags.hasResize ||
+			flags.hasMove),
 	`- For actions that support \`targetSelector\`, prefer selectors over manually listing ids when the user refers to "this", "these", "here", selected shapes, context shapes, labels, nearby objects, connected objects, or spatial tiles.
 - For "this" and "these", use \`{"_type":"selected"}\` when the user has selected shapes; use \`{"_type":"context"}\` when the user supplied target/context shapes or an area.
 - Use selector types such as \`labels-of-selected\`, \`arrows-connected-to-selected\`, \`connected-to\`, \`tile\`, \`nearest\`, \`inside-region\`, \`intersecting-region\`, \`text\`, and \`type\` to express target intent. Local code resolves them against the current canvas.
 - If a selector should resolve exactly one shape, set \`expect:"one"\`. Ambiguous selectors fail safely and trigger a follow-up instead of editing the wrong object, so do not guess ids when the observation is ambiguous.`
+)}
+${flagged(
+	flags.hasCanvasObservationPart && flags.canEdit && flags.hasMessage,
+	`- Ambiguous target safety:
+	- Treat ambiguity as a blocker, not a tie-breaker. If the user names a target by non-unique text, note, type, color, or location and multiple objects plausibly match, do not pick one id.
+	- If the action supports \`targetSelector\`, express the user's target as a selector with \`expect:"one"\`, for example \`{"_type":"text","text":"Revenue","match":"exact","searchNotes":true,"expect":"one"}\`. Local resolution will safe-fail instead of editing the wrong object.
+	- If no safe selector applies, or if the user really must choose between multiple matching objects, return a \`message\` asking the user to clarify. Do not also edit in the same response.
+	- Only hard-code \`shapeId\` or \`shapeIds\` when selection, context, a spatial qualifier, or a unique label makes the target unambiguous.`
 )}
 ${flagged(
 	flags.hasSelectedShapesPart,

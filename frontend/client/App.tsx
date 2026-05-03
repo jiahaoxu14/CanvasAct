@@ -88,7 +88,7 @@ function App() {
 			<div className="tldraw-agent-container">
 				<div className="tldraw-canvas">
 					<Tldraw
-						persistenceKey="canvasact-agent"
+						persistenceKey="canvasact-agent-demo-v1"
 						tools={tools}
 						overrides={overrides}
 						components={components}

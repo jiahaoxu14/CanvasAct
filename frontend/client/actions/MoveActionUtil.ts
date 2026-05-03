@@ -1,8 +1,10 @@
-import { TLShapeId, Vec } from 'tldraw'
+import { TLShape, TLShapeId, Vec } from 'tldraw'
 import { MoveAction } from '../../shared/schema/AgentActionSchemas'
+import type { SimpleShapeId } from '../../shared/types/ids-schema'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
+import { resolveTargetSelectorForAction, scheduleTargetResolutionFailure } from './resolveTargets'
 
 export const MoveActionUtil = registerActionUtil(
 	class MoveActionUtil extends AgentActionUtil<MoveAction> {
@@ -18,9 +20,25 @@ export const MoveActionUtil = registerActionUtil(
 		override sanitizeAction(action: Streaming<MoveAction>, helpers: AgentHelpers) {
 			if (!action.complete) return action
 
-			// Make sure the shape ID refers to a real shape
-			const shapeId = helpers.ensureShapeIdExists(action.shapeId)
-			if (!shapeId) return null
+			const shapeIds = resolveTargetSelectorForAction({
+				agent: this.agent,
+				helpers,
+				selector: action.targetSelector,
+				shapeIds: action.shapeId ? [action.shapeId] : [],
+				actionType: 'move',
+				min: 1,
+				max: 1,
+			})
+			if (!shapeIds) return null
+			const shapeId = shapeIds[0]
+			if (!action.targetSelector && hasAmbiguousHardCodedMoveTarget(this, shapeId, action.intent)) {
+				scheduleTargetResolutionFailure(
+					this.agent,
+					'move',
+					`The hard-coded target "${shapeId}" appears to be one of multiple matching shapes. Use a targetSelector with expect:"one", or ask the user which one to move.`
+				)
+				return null
+			}
 			action.shapeId = shapeId
 
 			// Make sure the x and y values are numbers
@@ -36,6 +54,8 @@ export const MoveActionUtil = registerActionUtil(
 		override applyAction(action: Streaming<MoveAction>, helpers: AgentHelpers) {
 			if (!action.complete) return
 			const { editor } = this
+
+			if (!action.shapeId) return
 
 			// Translate the position back to the chat's position
 			const { x, y } = helpers.removeOffsetFromVec({ x: action.x, y: action.y })
@@ -126,3 +146,57 @@ export const MoveActionUtil = registerActionUtil(
 		}
 	}
 )
+
+function hasAmbiguousHardCodedMoveTarget(
+	util: AgentActionUtil<MoveAction>,
+	shapeId: SimpleShapeId,
+	intent: string | undefined
+) {
+	const { editor, agent } = util
+	const shape = editor.getShape(`shape:${shapeId}` as TLShapeId)
+	if (!shape) return false
+	if (editor.getSelectedShapeIds().includes(shape.id)) return false
+
+	const request = agent.requests.getActiveRequest()
+	const haystack = normalizeText(
+		[
+			intent,
+			...(request?.agentMessages ?? []),
+			...(request?.userMessages ?? []),
+		]
+			.filter(Boolean)
+			.join('\n')
+	)
+	if (!haystack) return false
+
+	for (const label of getShapeTextCandidates(editor, shape)) {
+		if (!label || !haystack.includes(normalizeText(label))) continue
+		const matchingIds = editor
+			.getCurrentPageShapesSorted()
+			.filter((candidate) =>
+				getShapeTextCandidates(editor, candidate).some(
+					(candidateLabel) => normalizeText(candidateLabel) === normalizeText(label)
+				)
+			)
+			.map((candidate) => candidate.id)
+		if (matchingIds.length > 1) return true
+	}
+
+	return false
+}
+
+function getShapeTextCandidates(editor: AgentActionUtil<MoveAction>['editor'], shape: TLShape) {
+	const candidates: string[] = []
+	try {
+		const text = editor.getShapeUtil(shape).getText(shape)
+		if (text) candidates.push(text)
+	} catch {
+		// Some shape utils do not expose text.
+	}
+	if (typeof shape.meta.note === 'string') candidates.push(shape.meta.note)
+	return candidates
+}
+
+function normalizeText(value: string) {
+	return value.trim().toLocaleLowerCase()
+}
