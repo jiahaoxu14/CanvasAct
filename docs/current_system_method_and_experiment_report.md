@@ -172,6 +172,16 @@ Task categories:
 - layout cleanup
 - multi-step repair
 
+| Category | Example task |
+| --- | --- |
+| Simple edits | Move the Start box 10 pixels left. |
+| Selection/offscreen | Move the selected offscreen shape 20 pixels right. |
+| Partial visibility | Move the partly visible shape on the left rightward. |
+| Ambiguous targets | Move the Revenue box 20 pixels right. |
+| Arrows/connectors | Repair the loose arrow so it connects Start to End. |
+| Layout cleanup | Clean up this messy cluster without changing text. |
+| Multi-step repair | Clean the diagram and fix broken arrows. |
+
 The main metrics were:
 
 - success rate
