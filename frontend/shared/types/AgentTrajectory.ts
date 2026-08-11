@@ -1,4 +1,5 @@
 import type { CanvasObservation } from '../format/CanvasObservation'
+import type { AgentVariant } from '../agentVariants'
 import type { AgentAction } from './AgentAction'
 import type { ActionChunkStreamInfo } from './ActionChunk'
 import type { ActionContract, ActionVerificationResult } from './ActionContract'
@@ -38,6 +39,7 @@ export interface AgentTrajectoryVerificationRecord {
 
 export interface AgentTrajectory {
 	trajectoryId: string
+	agentVariant: AgentVariant
 	startedAt: string
 	finishedAt?: string
 	status: AgentTrajectoryStatus

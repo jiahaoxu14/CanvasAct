@@ -3,6 +3,7 @@ import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
+import { AgentVariantSwitch } from './AgentVariantSwitch'
 
 export function ChatPanel() {
 	const agent = useAgent()
@@ -44,7 +45,13 @@ export function ChatPanel() {
 	return (
 		<div className="chat-panel tl-theme__dark">
 			<div className="chat-header">
-				<button className="new-chat-button" onClick={handleNewChat}>
+				<AgentVariantSwitch />
+				<button
+					className="new-chat-button"
+					onClick={handleNewChat}
+					title="Start a new chat"
+					aria-label="Start a new chat"
+				>
 					+
 				</button>
 			</div>

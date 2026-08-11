@@ -1,5 +1,6 @@
 import type { AgentAction } from '../../shared/types/AgentAction'
 import type { PromptPart } from '../../shared/types/PromptPart'
+import { LEGACY_AGENT_MODE } from '../../shared/agentVariants'
 
 // Import action utils to ensure they register themselves
 import { AddDetailActionUtil } from '../actions/AddDetailActionUtil'
@@ -31,6 +32,7 @@ import { ThinkActionUtil } from '../actions/ThinkActionUtil'
 import { UnknownActionUtil } from '../actions/UnknownActionUtil'
 import { UpdateActionUtil } from '../actions/UpdateActionUtil'
 import { UpsertTodoListItemActionUtil } from '../actions/UpsertTodoListItemActionUtil'
+import '../actions/original/OriginalAgentActionUtils'
 
 // Import prompt part utils to ensure they register themselves
 import { AgentViewportBoundsPartUtil } from '../parts/AgentViewportBoundsPartUtil'
@@ -90,6 +92,61 @@ export const AGENT_MODE_DEFINITIONS = [
 	{
 		type: 'idling',
 		active: false,
+	},
+	{
+		type: LEGACY_AGENT_MODE,
+		active: true,
+
+		// This mirrors the original tldraw agent-kit prompt surface: screenshots and
+		// legacy shape summaries, without CanvasObservation or semantic actions.
+		parts: [
+			ModePartUtil.type,
+			DebugPartUtil.type,
+			ModelNamePartUtil.type,
+			MessagesPartUtil.type,
+			DataPartUtil.type,
+			ContextItemsPartUtil.type,
+			ScreenshotPartUtil.type,
+			UserViewportBoundsPartUtil.type,
+			AgentViewportBoundsPartUtil.type,
+			BlurryShapesPartUtil.type,
+			PeripheralShapesPartUtil.type,
+			SelectedShapesPartUtil.type,
+			ChatHistoryPartUtil.type,
+			UserActionHistoryPartUtil.type,
+			TodoListPartUtil.type,
+			CanvasLintsPartUtil.type,
+			TimePartUtil.type,
+		],
+
+		// Keep the original primitive/planning action set. CanvasAct-only semantic
+		// actions and selector-oriented operations are intentionally omitted.
+		actions: [
+			MessageActionUtil.type,
+			ThinkActionUtil.type,
+			ReviewActionUtil.type,
+			AddDetailActionUtil.type,
+			UpsertTodoListItemActionUtil.type,
+			SetMyViewActionUtil.type,
+			CreateActionUtil.type,
+			DeleteActionUtil.type,
+			UpdateActionUtil.type,
+			LabelActionUtil.type,
+			MoveActionUtil.type,
+			PlaceActionUtil.type,
+			BringToFrontActionUtil.type,
+			SendToBackActionUtil.type,
+			RotateActionUtil.type,
+			ResizeActionUtil.type,
+			AlignActionUtil.type,
+			DistributeActionUtil.type,
+			StackActionUtil.type,
+			ClearActionUtil.type,
+			PenActionUtil.type,
+			CountryInfoActionUtil.type,
+			CountShapesActionUtil.type,
+			UnknownActionUtil.type,
+		],
 	},
 	{
 		type: 'working',

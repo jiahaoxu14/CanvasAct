@@ -28,6 +28,7 @@ export class AgentTrajectoryManager extends BaseAgentManager {
 		const now = new Date()
 		const trajectory: AgentTrajectory = {
 			trajectoryId: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+			agentVariant: this.agent.variant.getVariant(),
 			startedAt: now.toISOString(),
 			status: 'running',
 			request: {

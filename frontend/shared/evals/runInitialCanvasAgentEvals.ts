@@ -407,6 +407,7 @@ function makeTrajectory({
 	const timestamp = FIXED_TIMESTAMP
 	return {
 		trajectoryId: `eval-${id}`,
+		agentVariant: 'canvasact',
 		startedAt: timestamp,
 		finishedAt: timestamp,
 		status: 'completed',

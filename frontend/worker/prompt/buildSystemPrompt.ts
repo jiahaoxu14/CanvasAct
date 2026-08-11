@@ -29,7 +29,7 @@ export function buildSystemPrompt(
 	}
 
 	const { actionTypes, partTypes } = modePart
-	const flags = getSystemPromptFlags(actionTypes, partTypes)
+	const flags = getSystemPromptFlags(actionTypes, partTypes, modePart.modeType)
 
 	const lines = [buildIntroPromptSection(flags), buildRulesPromptSection(flags)]
 

@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"build": "vite build",
+		"check:agent-variants": "esbuild scripts/check-agent-variants.ts --bundle --platform=node --format=esm --outfile=.tsbuild/check-agent-variants.mjs && node .tsbuild/check-agent-variants.mjs",
 		"dev": "vite",
 		"eval:canvas-agent": "esbuild scripts/run-canvas-agent-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-canvas-agent-evals.mjs && node .tsbuild/run-canvas-agent-evals.mjs",
 		"eval:model-in-loop": "esbuild scripts/run-model-in-loop-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-model-in-loop-evals.mjs && node .tsbuild/run-model-in-loop-evals.mjs",

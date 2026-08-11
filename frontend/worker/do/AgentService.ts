@@ -3,6 +3,7 @@ import { createGoogleGenerativeAI, GoogleGenerativeAIProvider } from '@ai-sdk/go
 import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
 import { LanguageModel, ModelMessage, streamText } from 'ai'
 import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../../shared/models'
+import { isLegacyAgentMode } from '../../shared/agentVariants'
 import { DebugPart } from '../../shared/schema/PromptPartDefinitions'
 import { AgentAction } from '../../shared/types/AgentAction'
 import type { AgentActionResponse, AgentStreamAction } from '../../shared/types/ActionChunk'
@@ -56,6 +57,10 @@ export class AgentService {
 
 		const modelDefinition = getAgentModelDefinition(modelId)
 		const systemPrompt = buildSystemPrompt(prompt)
+		const useOriginalAgent = isLegacyAgentMode(prompt.mode?.modeType ?? '')
+		const responseStart = useOriginalAgent
+			? '{"actions": [{"_type":'
+			: '{"chunks": [{"intent":'
 
 		// Build messages with provider-specific options
 		const messages: ModelMessage[] = []
@@ -94,10 +99,10 @@ export class AgentService {
 			}
 		}
 
-		// Add the assistant message to indicate the start of a chunked response.
+		// Add the assistant message to indicate the start of the selected response shape.
 		messages.push({
 			role: 'assistant',
-			content: '{"chunks": [{"intent":',
+			content: responseStart,
 		})
 
 		// Configure thinking budgets based on model. We let models think using the think action, so we keep this as low as possible to minimize time to first token
@@ -135,7 +140,7 @@ export class AgentService {
 
 			const canForceResponseStart =
 				provider === 'anthropic.messages' || provider === 'google.generative-ai'
-			let buffer = canForceResponseStart ? '{"chunks": [{"intent":' : ''
+			let buffer = canForceResponseStart ? responseStart : ''
 			let cursor = 0
 			let maybeIncompleteAction: StreamActionEntry | null = null
 

@@ -22,7 +22,7 @@ export const CanvasLintsPartUtil = registerPromptPartUtil(
 
 			// Use created shapes when in working mode, otherwise use shapes in request bounds
 			const shapesToCheck =
-				agent.mode.getCurrentModeType() === 'working'
+				agent.mode.getCurrentModeDefinition().active
 					? agent.lints.getCreatedShapes()
 					: shapesInBounds
 

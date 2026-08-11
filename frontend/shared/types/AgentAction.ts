@@ -39,6 +39,7 @@ export type AgentAction = ExtractZodType<AgentActionSchema>
 
 /** Runtime import of all schemas for building lookup */
 import * as AllSchemas from '../schema/AgentActionSchemas'
+import '../schema/OriginalAgentActionSchemas'
 
 /** Type guard to check if a value is a Zod object schema with _type */
 function isActionSchema(value: unknown): value is z.ZodObject<{ _type: z.ZodLiteral<string> }> {

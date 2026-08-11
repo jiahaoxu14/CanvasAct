@@ -145,6 +145,7 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 			agent.todos.getTodos()
 			agent.context.getItems()
 			agent.modelName.getModelName()
+			agent.variant.getVariant()
 			agent.debug.getDebugFlags()
 
 			// Save if not currently loading

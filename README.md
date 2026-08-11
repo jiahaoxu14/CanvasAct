@@ -52,6 +52,22 @@ GOOGLE_API_KEY=your_google_api_key_here
 
 The frontend runs on `http://127.0.0.1:5173`. It serves the `tldraw` agent UI and worker-backed `/stream` endpoint locally, and it proxies `/api/*` calls to the Flask server on `http://127.0.0.1:5000`.
 
+### Agent variants
+
+Use the switch in the chat-panel header to choose which implementation handles the next prompt:
+
+- **CanvasAct** uses `CanvasObservation`, selector-aware and semantic actions, chunked responses, and local verification/repair.
+- **Original** reproduces the pre-CanvasAct tldraw agent-kit path: legacy shape context, primitive actions with required ids, action-list responses, and no CanvasAct verification loop.
+
+Switching variants starts a fresh chat so prompt histories do not contaminate the comparison. It preserves the canvas, selected model, and recorded trajectories. The selected variant is saved locally and each new trajectory records which variant produced it.
+
+Verify the two prompt/schema contracts without making model calls:
+
+```bash
+cd frontend
+npm run check:agent-variants
+```
+
 ## Start both in dev mode
 
 ```bash

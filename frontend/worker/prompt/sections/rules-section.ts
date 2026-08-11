@@ -60,7 +60,7 @@ Refer to the JSON schema for the full list of available events, their properties
 2. **Do not generate extra fields or omit required fields.**
 3. **Use meaningful \`intent\` descriptions for all actions.**
 ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related events.**')}
-${flagged(flags.canEdit, '5. **Prefer `chunks` over top-level `actions` for multi-step edits. Keep each chunk focused enough that its result can be verified before the next chunk.**')}
+${flagged(flags.canEdit && flags.usesActionChunks, '5. **Prefer `chunks` over top-level `actions` for multi-step edits. Keep each chunk focused enough that its result can be verified before the next chunk.**')}
 
 ## Useful notes
 
@@ -177,7 +177,9 @@ ${flagged(
 			flags.hasBlurryShapesPart ||
 			flags.hasPeripheralShapesPart ||
 			flags.hasSelectedShapesPart),
-	'- To "see" the canvas, combine the screenshot with the structured canvas observation and any legacy shape/context prompt parts.'
+	flags.hasCanvasObservationPart
+		? '- To "see" the canvas, combine the screenshot with the structured canvas observation and any legacy shape/context prompt parts.'
+		: '- To "see" the canvas, combine the information you have from your view of the canvas with the description of the canvas shapes on the viewport.'
 )}
 ${flagged(
 	(flags.hasDistribute || flags.hasStack || flags.hasAlign || flags.hasPlace) &&

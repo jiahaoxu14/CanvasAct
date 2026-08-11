@@ -1,5 +1,6 @@
 import { Editor, RecordsDiff, reverseRecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTldrawShapeToFocusedShape'
+import { AgentVariant, isAgentVariant } from '../../shared/agentVariants'
 import { AgentModelName } from '../../shared/models'
 import { AgentAction } from '../../shared/types/AgentAction'
 import { AgentStreamAction } from '../../shared/types/ActionChunk'
@@ -27,6 +28,7 @@ import { AgentTodoManager } from './managers/AgentTodoManager'
 import { AgentTrajectoryManager } from './managers/AgentTrajectoryManager'
 import { AgentUserActionTracker } from './managers/AgentUserActionTracker'
 import { AgentVerificationManager } from './managers/AgentVerificationManager'
+import { AgentVariantManager } from './managers/AgentVariantManager'
 
 /**
  * The persisted state of an agent.
@@ -38,6 +40,7 @@ export interface PersistedAgentState {
 	todoList?: TodoItem[]
 	contextItems?: ContextItem[]
 	modelName?: AgentModelName
+	agentVariant?: AgentVariant
 	debugFlags?: AgentDebugFlags
 }
 
@@ -94,6 +97,9 @@ export class TldrawAgent {
 	/** The mode manager associated with this agent. */
 	mode: AgentModeManager
 
+	/** Selects the original tldraw agent or the CanvasAct method. */
+	variant: AgentVariantManager
+
 	/** The model name manager associated with this agent. */
 	modelName: AgentModelNameManager
 
@@ -139,6 +145,8 @@ export class TldrawAgent {
 		this.onError = onError
 
 		// Initialize managers
+		// Variant must exist before mode transitions choose a working implementation.
+		this.variant = new AgentVariantManager(this)
 		// Note: mode must be initialized before actions, since actions depends on mode
 		this.mode = new AgentModeManager(this)
 		this.actions = new AgentActionManager(this)
@@ -176,6 +184,7 @@ export class TldrawAgent {
 			todoList: this.todos.getTodos(),
 			contextItems: this.context.getItems(),
 			modelName: this.modelName.getModelName(),
+			agentVariant: this.variant.getVariant(),
 			debugFlags: this.debug.getDebugFlags(),
 		}
 	}
@@ -202,6 +211,9 @@ export class TldrawAgent {
 		if (state.modelName) {
 			this.modelName.setModelName(state.modelName)
 		}
+		if (isAgentVariant(state.agentVariant)) {
+			this.variant.setVariant(state.agentVariant)
+		}
 		if (state.debugFlags) {
 			this.debug.setDebugFlags(state.debugFlags)
 		}
@@ -227,6 +239,7 @@ export class TldrawAgent {
 		this.todos.dispose()
 		this.trajectories.dispose()
 		this.verification.dispose()
+		this.variant.dispose()
 
 		// Note: Agent removal from registry is handled by AgentAppAgentsManager.deleteAgent()
 	}
@@ -564,6 +577,30 @@ export class TldrawAgent {
 		this.verification.reset()
 	}
 
+	/**
+	 * Switch agent implementations without changing the canvas or deleting prior trajectories.
+	 * Conversation state is cleared so one implementation never receives the other's history.
+	 */
+	setVariant(variant: AgentVariant) {
+		if (variant === this.variant.getVariant()) return
+		if (this.requests.isGenerating()) {
+			throw new Error('Wait for the current request to finish before switching agents.')
+		}
+		if (this.mode.getCurrentModeDefinition().active) {
+			throw new Error('The agent must be idle before switching implementations.')
+		}
+
+		this.chat.reset()
+		this.chatOrigin.reset()
+		this.context.reset()
+		this.lints.reset()
+		this.requests.reset()
+		this.todos.reset()
+		this.userAction.reset()
+		this.verification.reset()
+		this.variant.setVariant(variant)
+	}
+
 	// ==================== Request Helpers ====================
 
 	/**
@@ -600,7 +637,7 @@ export class TldrawAgent {
 			)
 		}
 
-		const availableActions = modeDefinition.actions
+		const availableActions: readonly AgentAction['_type'][] = modeDefinition.actions
 
 		const requestPromise = (async () => {
 			const prompt = await this.preparePrompt(request, helpers)

@@ -5,6 +5,7 @@ import type {
 	ActionVerificationFailure,
 } from '../../../shared/types/ActionContract'
 import type { SimpleShapeId } from '../../../shared/types/ids-schema'
+import { isLegacyAgentMode } from '../../../shared/agentVariants'
 import { verifyActionResult } from '../../actions/verifyActionResult'
 import type { AgentHelpers } from '../../AgentHelpers'
 import { BaseAgentManager } from './BaseAgentManager'
@@ -31,6 +32,7 @@ export class AgentVerificationManager extends BaseAgentManager {
 		_helpers: AgentHelpers
 	): void {
 		if (!action.complete) return
+		if (isLegacyAgentMode(this.agent.mode.getCurrentModeType())) return
 
 		if (action.chunk) {
 			this.addChunkContract(action, contract)

@@ -1,10 +1,16 @@
-import type { AgentAction } from '../../shared/types/AgentAction'
-import { getActionMeta } from '../../shared/types/AgentAction'
+import { isLegacyAgentMode } from '../../shared/agentVariants'
+import { getActionMeta, type AgentAction } from '../../shared/types/AgentAction'
 import type { PromptPart } from '../../shared/types/PromptPart'
 import type { SystemPromptCategory } from '../../shared/types/SystemPromptCategory'
 
-export function getSystemPromptFlags(actions: AgentAction['_type'][], parts: PromptPart['type'][]) {
+export function getSystemPromptFlags(
+	actions: AgentAction['_type'][],
+	parts: PromptPart['type'][],
+	mode: string
+) {
 	return {
+		usesActionChunks: !isLegacyAgentMode(mode),
+
 		// Communication
 		hasMessage: actions.includes('message'),
 
