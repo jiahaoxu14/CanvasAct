@@ -30,6 +30,7 @@ export function getSystemPromptFlags(
 
 		// Semantic edits
 		hasArrange: actions.includes('arrange'),
+		hasBuildFlow: actions.includes('buildFlow'),
 		hasFitText: actions.includes('fitText'),
 		hasConnect: actions.includes('connect'),
 		hasCleanupLayout: actions.includes('cleanupLayout'),

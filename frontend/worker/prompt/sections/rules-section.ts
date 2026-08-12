@@ -188,12 +188,14 @@ ${flagged(
 )}
 ${flagged(
 	flags.hasArrange ||
+		flags.hasBuildFlow ||
 		flags.hasFitText ||
 		flags.hasConnect ||
 		flags.hasCleanupLayout ||
 		flags.hasAnnotateGroup,
 	`- Prefer semantic edit actions for common multi-step canvas tasks:
 	- Use \`arrange\` for rows, columns, grids, flows, radial layouts, and stacks instead of emitting many \`move\` actions.
+	- Use \`buildFlow\` when the user specifies an ordered workflow. Pass the step ids in the requested order; in that one action, local code fits the flow inside the active workspace, creates exactly one canonical bound arrow between adjacent steps, and removes stale, duplicate, contradictory, or noncanonical connectors among those steps. Do not emit separate move, delete, or connect actions for the same flow.
 	- Use \`fitText\` when labels or text overflow, need wrapping, need shortening, or need to be moved back into their containers.
 	- Use \`connect\` to create bound arrows between shapes. It resolves endpoints locally and avoids duplicate arrows by default.
 	- Use \`cleanupLayout\` when shapes overlap or spacing needs repair.
@@ -206,6 +208,7 @@ ${flagged(
 			flags.hasDistribute ||
 			flags.hasStack ||
 			flags.hasArrange ||
+			flags.hasBuildFlow ||
 			flags.hasFitText ||
 			flags.hasConnect ||
 			flags.hasCleanupLayout ||

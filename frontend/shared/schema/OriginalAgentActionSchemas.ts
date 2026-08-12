@@ -64,6 +64,23 @@ registerActionSchema(
 )
 
 registerActionSchema(
+	'place',
+	z
+		.object({
+			_type: z.literal('place'),
+			align: z.enum(['start', 'center', 'end']),
+			alignOffset: z.number(),
+			intent: z.string(),
+			referenceShapeId: SimpleShapeIdSchema,
+			side: z.enum(['top', 'bottom', 'left', 'right']),
+			sideOffset: z.number(),
+			shapeId: SimpleShapeIdSchema,
+		})
+		.meta({ title: 'Place', description: 'The AI places a shape relative to another shape.' }),
+	originalMode
+)
+
+registerActionSchema(
 	'resize',
 	z
 		.object({

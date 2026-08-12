@@ -32,6 +32,15 @@ export function verifyActionResult(
 			case 'labels-inside-containers':
 				failures.push(...verifyLabelsInsideContainers(editor, postcondition))
 				break
+			case 'objects-inside-containers':
+				failures.push(...verifyObjectsInsideContainers(editor, postcondition))
+				break
+			case 'ordered-layout':
+				failures.push(...verifyOrderedLayout(editor, postcondition))
+				break
+			case 'connection-sequence':
+				failures.push(...verifyConnectionSequence(editor, postcondition))
+				break
 			case 'no-duplicate-arrows':
 				failures.push(...verifyNoDuplicateArrows(editor, postcondition))
 				break
@@ -135,6 +144,132 @@ function verifyLabelsInsideContainers(
 				)
 			)
 		}
+	}
+	return failures
+}
+
+function verifyObjectsInsideContainers(
+	editor: Editor,
+	postcondition: Extract<ActionPostcondition, { type: 'objects-inside-containers' }>
+): ActionVerificationFailure[] {
+	const failures: ActionVerificationFailure[] = []
+	for (const pair of postcondition.pairs) {
+		const objectBounds = editor.getShapePageBounds(toTlShapeId(pair.objectId))
+		const containerBounds = editor.getShapePageBounds(toTlShapeId(pair.containerId))
+		if (!objectBounds || !containerBounds) continue
+		const padding = Math.max(0, pair.padding ?? 0)
+		const isInside =
+			objectBounds.minX >= containerBounds.minX + padding &&
+			objectBounds.minY >= containerBounds.minY + padding &&
+			objectBounds.maxX <= containerBounds.maxX - padding &&
+			objectBounds.maxY <= containerBounds.maxY - padding
+		if (!isInside) {
+			failures.push(
+				failure(
+					postcondition,
+					`Object "${pair.objectId}" is not inside container "${pair.containerId}" with ${padding}px padding.`,
+					[pair.objectId, pair.containerId]
+				)
+			)
+		}
+	}
+	return failures
+}
+
+function verifyOrderedLayout(
+	editor: Editor,
+	postcondition: Extract<ActionPostcondition, { type: 'ordered-layout' }>
+): ActionVerificationFailure[] {
+	const items = postcondition.shapeIds
+		.map((id) => ({ id, bounds: editor.getShapePageBounds(toTlShapeId(id)) }))
+		.filter((item): item is { id: SimpleShapeId; bounds: Box } => item.bounds !== undefined)
+	if (items.length !== postcondition.shapeIds.length) {
+		return [
+			failure(
+				postcondition,
+				'One or more shapes in the ordered layout no longer exist.',
+				postcondition.shapeIds
+			),
+		]
+	}
+
+	const tolerance = Math.max(0, postcondition.tolerance ?? 2)
+	for (let index = 0; index < items.length - 1; index++) {
+		const current = items[index]
+		const next = items[index + 1]
+		const actualGap =
+			postcondition.direction === 'horizontal'
+				? next.bounds.minX - current.bounds.maxX
+				: next.bounds.minY - current.bounds.maxY
+		const crossAxisError =
+			postcondition.direction === 'horizontal'
+				? Math.abs(next.bounds.midY - current.bounds.midY)
+				: Math.abs(next.bounds.midX - current.bounds.midX)
+		const gapError =
+			postcondition.gap === undefined ? 0 : Math.abs(actualGap - postcondition.gap)
+		if (actualGap < -tolerance || crossAxisError > tolerance || gapError > tolerance) {
+			return [
+				failure(
+					postcondition,
+					`Shapes "${current.id}" and "${next.id}" do not satisfy the requested ${postcondition.direction} order and spacing.`,
+					[current.id, next.id]
+				),
+			]
+		}
+	}
+	return []
+}
+
+function verifyConnectionSequence(
+	editor: Editor,
+	postcondition: Extract<ActionPostcondition, { type: 'connection-sequence' }>
+): ActionVerificationFailure[] {
+	const stepSet = new Set(postcondition.shapeIds)
+	const expectedKeys = new Set(
+		postcondition.shapeIds.slice(0, -1).map((sourceId, index) => {
+			const targetId = postcondition.shapeIds[index + 1]
+			return `${sourceId}->${targetId}`
+		})
+	)
+	const arrowsByKey = new Map<string, SimpleShapeId[]>()
+
+	for (const shape of editor.getCurrentPageShapesSorted()) {
+		if (shape.type !== 'arrow') continue
+		const bindings = getArrowBindings(editor, shape as TLArrowShape)
+		if (!bindings.start || !bindings.end) continue
+		const sourceId = fromTlShapeId(bindings.start.toId)
+		const targetId = fromTlShapeId(bindings.end.toId)
+		if (!stepSet.has(sourceId) || !stepSet.has(targetId)) continue
+		const key = `${sourceId}->${targetId}`
+		const arrowIds = arrowsByKey.get(key) ?? []
+		arrowIds.push(fromTlShapeId(shape.id))
+		arrowsByKey.set(key, arrowIds)
+	}
+
+	const failures: ActionVerificationFailure[] = []
+	for (const key of expectedKeys) {
+		const [sourceId, targetId] = key.split('->') as [SimpleShapeId, SimpleShapeId]
+		const arrowIds = arrowsByKey.get(key) ?? []
+		if (arrowIds.length !== 1) {
+			failures.push(
+				failure(
+					postcondition,
+					`Expected exactly one bound arrow from "${sourceId}" to "${targetId}", found ${arrowIds.length}.`,
+					[sourceId, targetId, ...arrowIds]
+				)
+			)
+		}
+	}
+	for (const [key, arrowIds] of arrowsByKey) {
+		if (expectedKeys.has(key)) continue
+		const [sourceId, targetId] = key.split('->') as [SimpleShapeId, SimpleShapeId]
+		failures.push(
+			failure(
+				postcondition,
+				`Unexpected flow arrow connects "${sourceId}" to "${targetId}".`,
+				[sourceId, targetId, ...arrowIds]
+			)
+		)
 	}
 	return failures
 }

@@ -29,6 +29,27 @@ export const ActionPostconditionSchema = z.union([
 		),
 	}),
 	z.object({
+		type: z.literal('objects-inside-containers'),
+		pairs: z.array(
+			z.object({
+				objectId: SimpleShapeIdSchema,
+				containerId: SimpleShapeIdSchema,
+				padding: z.number().nonnegative().optional(),
+			})
+		),
+	}),
+	z.object({
+		type: z.literal('ordered-layout'),
+		shapeIds: z.array(SimpleShapeIdSchema),
+		direction: z.enum(['horizontal', 'vertical']),
+		gap: z.number().nonnegative().optional(),
+		tolerance: z.number().nonnegative().optional(),
+	}),
+	z.object({
+		type: z.literal('connection-sequence'),
+		shapeIds: z.array(SimpleShapeIdSchema),
+	}),
+	z.object({
 		type: z.literal('no-duplicate-arrows'),
 	}),
 	z.object({

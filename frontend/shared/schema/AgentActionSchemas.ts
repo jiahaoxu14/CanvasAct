@@ -252,6 +252,29 @@ export const CleanupLayoutAction = z
 
 export type CleanupLayoutAction = z.infer<typeof CleanupLayoutAction>
 
+// Build Flow Action
+export const BuildFlowAction = z
+	.object({
+		_type: z.literal('buildFlow'),
+		intent: z.string(),
+		shapeIds: z.array(SimpleShapeIdSchema).min(2),
+		direction: z.enum(['horizontal', 'vertical']),
+		gap: z.number().nonnegative().optional(),
+		region: ActionRegionSchema.optional(),
+		createArrows: z.boolean().optional(),
+		repairExistingConnectors: z.boolean().optional(),
+		createdShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		flowArrowIds: z.array(SimpleShapeIdSchema).optional(),
+	})
+	.meta({
+		title: 'Build Flow',
+		description:
+			'The AI turns an ordered list of shapes into one deterministic horizontal or vertical flow. The array order is the required reading order. In one action, the app spaces the shapes inside the active workspace, keeps exactly one canonical bound arrow between adjacent steps, and removes stale, duplicate, contradictory, or noncanonical connectors among those steps. Do not pair this with separate move, delete, or connect actions.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type BuildFlowAction = z.infer<typeof BuildFlowAction>
+
 // Annotate Group Action
 export const AnnotateGroupAction = z
 	.object({
@@ -332,17 +355,23 @@ export type PenAction = z.infer<typeof PenAction>
 export const PlaceAction = z
 	.object({
 		_type: z.literal('place'),
-		align: z.enum(['start', 'center', 'end']),
-		alignOffset: z.number(),
+		align: z.enum(['start', 'center', 'end']).optional(),
+		alignOffset: z.number().optional(),
 		intent: z.string(),
-		referenceShapeId: SimpleShapeIdSchema,
-		side: z.enum(['top', 'bottom', 'left', 'right']),
-		sideOffset: z.number(),
-		shapeId: SimpleShapeIdSchema,
+		referenceShapeId: SimpleShapeIdSchema.optional(),
+		referenceSelector: TargetSelectorSchema.optional(),
+		side: z.enum(['top', 'bottom', 'left', 'right', 'inside']),
+		sideOffset: z.number().optional(),
+		shapeId: SimpleShapeIdSchema.optional(),
+		targetSelector: TargetSelectorSchema.optional(),
+		insideAlignX: z.enum(['start', 'center', 'end']).optional(),
+		insideAlignY: z.enum(['start', 'center', 'end']).optional(),
+		padding: z.number().nonnegative().optional(),
 	})
 	.meta({
 		title: 'Place',
-		description: 'The AI places a shape relative to another shape.',
+		description:
+			'The AI places exactly one resolved shape relative to another shape. Use side:"inside" for deterministic placement within a container; use targetSelector and referenceSelector for semantic targets.',
 		_systemPromptCategory: 'edit',
 	})
 

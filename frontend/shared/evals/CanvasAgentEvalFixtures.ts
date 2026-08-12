@@ -107,6 +107,17 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 		},
 	},
 	{
+		id: 'selector_ambiguous_label_with_max',
+		kind: 'selector',
+		description: 'Selector max never truncates duplicate matches before expect-one validation.',
+		request: 'Move the duplicate label.',
+		expect: {
+			objectIds: ['duplicate-label-a' as SimpleShapeId, 'duplicate-label-b' as SimpleShapeId],
+			expectAmbiguousResolution: true,
+			maxFalseTargetRate: 0,
+		},
+	},
+	{
 		id: 'action_align_selected',
 		kind: 'action',
 		description: 'Selected shapes can be aligned deterministically without mutating unrelated shapes.',
@@ -140,6 +151,52 @@ export const INITIAL_CANVAS_AGENT_EVAL_FIXTURES: CanvasAgentEvalFixture[] = [
 			minPostconditionPassRate: 1,
 			maxUnrelatedShapeMutations: 0,
 			minVerificationFailures: 1,
+		},
+	},
+	{
+		id: 'case_study_1_ambiguous_place',
+		kind: 'action',
+		description: 'Case Study 1 safe-fails before moving any duplicated launch brief.',
+		request: 'Move the LAUNCH BRIEF into READY FOR LEGAL.',
+		expect: {
+			minPostconditionPassRate: 1,
+			maxUnrelatedShapeMutations: 0,
+			minVerificationFailures: 1,
+		},
+	},
+	{
+		id: 'action_place_inside_unique',
+		kind: 'action',
+		description: 'A clarified unique brief is placed inside the destination and verified locally.',
+		request: 'Move the NORTHSTAR campaign launch brief into READY FOR LEGAL.',
+		expect: {
+			minPostconditionPassRate: 1,
+			maxVerificationFailures: 0,
+		},
+	},
+	{
+		id: 'case_study_1_partial_visibility_place',
+		kind: 'action',
+		description:
+			'Case Study 1 uses a unique partial-visibility qualifier to move only the clipped duplicate card.',
+		request:
+			'Move the partially visible LAUNCH BRIEF at the right edge into READY FOR LEGAL.',
+		expect: {
+			minPostconditionPassRate: 1,
+			maxUnrelatedShapeMutations: 0,
+			maxVerificationFailures: 0,
+		},
+	},
+	{
+		id: 'case_study_2_build_flow',
+		kind: 'action',
+		description: 'Case Study 2 builds an ordered flow with one bound connector per adjacent pair.',
+		request: 'Build the five-step incident workflow in the requested order.',
+		expect: {
+			minPostconditionPassRate: 1,
+			maxGeometryErrorPx: 1,
+			maxUnrelatedShapeMutations: 0,
+			maxVerificationFailures: 0,
 		},
 	},
 	{

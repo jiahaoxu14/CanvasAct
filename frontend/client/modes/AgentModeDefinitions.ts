@@ -8,6 +8,7 @@ import { AlignActionUtil } from '../actions/AlignActionUtil'
 import { AnnotateGroupActionUtil } from '../actions/AnnotateGroupActionUtil'
 import { ArrangeActionUtil } from '../actions/ArrangeActionUtil'
 import { BringToFrontActionUtil } from '../actions/BringToFrontActionUtil'
+import { BuildFlowActionUtil } from '../actions/BuildFlowActionUtil'
 import { ClearActionUtil } from '../actions/ClearActionUtil'
 import { CleanupLayoutActionUtil } from '../actions/CleanupLayoutActionUtil'
 import { ConnectActionUtil } from '../actions/ConnectActionUtil'
@@ -216,6 +217,7 @@ export const AGENT_MODE_DEFINITIONS = [
 
 			// Groups of shapes
 			ArrangeActionUtil.type,
+			BuildFlowActionUtil.type,
 			FitTextActionUtil.type,
 			ConnectActionUtil.type,
 			CleanupLayoutActionUtil.type,

@@ -12,6 +12,7 @@ import { convertTldrawIdToSimpleId } from '../../shared/format/convertTldrawShap
 import type {
 	AnnotateGroupAction,
 	ArrangeAction,
+	BuildFlowAction,
 	CleanupLayoutAction,
 	ConnectAction,
 	FitTextAction,
@@ -28,6 +29,72 @@ type ShapeInfo = {
 export type ConnectionPair = {
 	sourceId: SimpleShapeId
 	targetId: SimpleShapeId
+}
+
+export interface BuildFlowResult {
+	createdShapeIds: SimpleShapeId[]
+	flowArrowIds: SimpleShapeId[]
+}
+
+export function getFlowArrowIds(editor: Editor, shapeIds: SimpleShapeId[]) {
+	const stepSet = new Set(shapeIds)
+	const expectedKeys = new Set(
+		shapeIds.slice(0, -1).map((sourceId, index) =>
+			connectionKey({ sourceId, targetId: shapeIds[index + 1] })
+		)
+	)
+	return editor
+		.getCurrentPageShapesSorted()
+		.filter((shape): shape is TLArrowShape => shape.type === 'arrow')
+		.filter((shape) => {
+			const bindings = getArrowBindings(editor, shape)
+			if (!bindings.start || !bindings.end) return false
+			const sourceId = convertTldrawIdToSimpleId(bindings.start.toId)
+			const targetId = convertTldrawIdToSimpleId(bindings.end.toId)
+			return (
+				stepSet.has(sourceId) &&
+				stepSet.has(targetId) &&
+				expectedKeys.has(connectionKey({ sourceId, targetId }))
+			)
+		})
+		.map((shape) => convertTldrawIdToSimpleId(shape.id))
+}
+
+export function buildFlow(
+	editor: Editor,
+	shapeIds: SimpleShapeId[],
+	action: Pick<
+		BuildFlowAction,
+		| 'direction'
+		| 'gap'
+		| 'region'
+		| 'createArrows'
+		| 'repairExistingConnectors'
+		| 'createdShapeIds'
+	>,
+	helpers?: AgentHelpers
+): BuildFlowResult {
+	const gap = normalizeGap(action.gap, 40)
+	arrangeShapes(
+		editor,
+		shapeIds,
+		{
+			layout: action.direction === 'horizontal' ? 'row' : 'column',
+			direction: action.direction,
+			gap,
+			region: action.region,
+		},
+		helpers
+	)
+
+	if (action.createArrows === false) {
+		return { createdShapeIds: [], flowArrowIds: [] }
+	}
+
+	return reconcileFlowConnections(editor, shapeIds, {
+		repairExistingConnectors: action.repairExistingConnectors !== false,
+		createdShapeIds: action.createdShapeIds ?? [],
+	})
 }
 
 export function arrangeShapes(
@@ -309,6 +376,84 @@ export function getConnectionPairs(
 	}
 
 	return pairs
+}
+
+function reconcileFlowConnections(
+	editor: Editor,
+	shapeIds: SimpleShapeId[],
+	options: { repairExistingConnectors: boolean; createdShapeIds: SimpleShapeId[] }
+): BuildFlowResult {
+	const stepSet = new Set(shapeIds)
+	const expectedPairs = shapeIds.slice(0, -1).map((sourceId, index) => ({
+		sourceId,
+		targetId: shapeIds[index + 1],
+	}))
+	const expectedKeys = new Set(expectedPairs.map(connectionKey))
+	const keptByKey = new Map<string, SimpleShapeId>()
+	const arrowIdsToDelete: TLShapeId[] = []
+
+	for (const shape of editor.getCurrentPageShapesSorted()) {
+		if (shape.type !== 'arrow') continue
+		const bindings = getArrowBindings(editor, shape as TLArrowShape)
+		if (!bindings.start || !bindings.end) continue
+		const sourceId = convertTldrawIdToSimpleId(bindings.start.toId)
+		const targetId = convertTldrawIdToSimpleId(bindings.end.toId)
+		if (!stepSet.has(sourceId) || !stepSet.has(targetId)) continue
+
+		const key = connectionKey({ sourceId, targetId })
+		if (!options.repairExistingConnectors) {
+			if (!keptByKey.has(key)) keptByKey.set(key, convertTldrawIdToSimpleId(shape.id))
+			continue
+		}
+		if (!expectedKeys.has(key) || keptByKey.has(key) || !isCanonicalFlowConnector(shape)) {
+			arrowIdsToDelete.push(shape.id)
+			continue
+		}
+		keptByKey.set(key, convertTldrawIdToSimpleId(shape.id))
+	}
+
+	if (arrowIdsToDelete.length > 0) editor.deleteShapes(arrowIdsToDelete)
+
+	const createdShapeIds: SimpleShapeId[] = []
+	const flowArrowIds: SimpleShapeId[] = []
+	for (let index = 0; index < expectedPairs.length; index++) {
+		const pair = expectedPairs[index]
+		const key = connectionKey(pair)
+		const existingId = keptByKey.get(key)
+		if (existingId) {
+			flowArrowIds.push(existingId)
+			continue
+		}
+		const requestedId =
+			options.createdShapeIds[index] ??
+			(`flow-${pair.sourceId}-${pair.targetId}` as SimpleShapeId)
+		const created = connectShapes(editor, {
+			sourceShapeIds: [pair.sourceId],
+			targetShapeIds: [pair.targetId],
+			avoidDuplicates: true,
+			createdShapeIds: [requestedId],
+		})
+		if (created[0]) {
+			createdShapeIds.push(created[0])
+			flowArrowIds.push(created[0])
+		}
+	}
+
+	return { createdShapeIds, flowArrowIds }
+}
+
+function isCanonicalFlowConnector(shape: TLArrowShape) {
+	return (
+		shape.props.arrowheadStart === 'none' &&
+		shape.props.arrowheadEnd === 'arrow' &&
+		shape.props.bend === 0 &&
+		shape.props.color === 'black' &&
+		shape.props.dash === 'draw'
+	)
+}
+
+function connectionKey(pair: ConnectionPair) {
+	return `${pair.sourceId}->${pair.targetId}`
 }
 
 function arrangeRow(editor: Editor, infos: ShapeInfo[], box: Box, gap: number) {

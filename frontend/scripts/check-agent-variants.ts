@@ -10,7 +10,7 @@ import type { AgentPrompt } from '../shared/types/AgentPrompt'
 import { getAgentModeDefinition } from '../client/modes/AgentModeDefinitions'
 import { buildSystemPrompt } from '../worker/prompt/buildSystemPrompt'
 
-const semanticActionTypes = ['arrange', 'connect', 'cleanupLayout', 'fitText', 'annotateGroup']
+const semanticActionTypes = ['arrange', 'buildFlow', 'connect', 'cleanupLayout', 'fitText', 'annotateGroup']
 const original = getAgentModeDefinition(LEGACY_AGENT_MODE)
 const canvasAct = getAgentModeDefinition(CANVASACT_AGENT_MODE)
 
@@ -106,6 +106,7 @@ assert.equal(originalSchema.includes('cleanupLayout'), false)
 assert.equal(canvasActSchema.includes('"chunks"'), true)
 assert.equal(canvasActSchema.includes('targetSelector'), true)
 assert.equal(canvasActSchema.includes('cleanupLayout'), true)
+assert.equal(canvasActSchema.includes('buildFlow'), true)
 
 console.log('Agent variant contract checks passed.')
 process.exit(0)

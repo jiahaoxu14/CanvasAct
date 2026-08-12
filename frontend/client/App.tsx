@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	DefaultSizeStyle,
+	type Editor,
 	ErrorBoundary,
 	TLComponents,
 	Tldraw,
@@ -61,6 +62,39 @@ async function deleteLegacyCanvasSaves() {
 	}
 }
 
+function deleteGeneratedDemoPages(editor: Editor) {
+	const generatedPages = editor
+		.getPages()
+		.filter((page) => typeof page.meta.canvasActDemoVersion === 'string')
+	if (generatedPages.length === 0) return
+
+	const generatedPageIds = new Set(generatedPages.map((page) => page.id))
+	editor.run(
+		() => {
+			let remainingPages = editor
+				.getPages()
+				.filter((page) => !generatedPageIds.has(page.id))
+			if (remainingPages.length === 0) {
+				editor.createPage({ name: 'Page 1' })
+				remainingPages = editor
+					.getPages()
+					.filter((page) => !generatedPageIds.has(page.id))
+			}
+
+			if (generatedPageIds.has(editor.getCurrentPageId()) && remainingPages[0]) {
+				editor.setCurrentPage(remainingPages[0].id)
+			}
+
+			for (const page of generatedPages) {
+				if (editor.getPage(page.id) && editor.getPages().length > 1) {
+					editor.deletePage(page.id)
+				}
+			}
+		},
+		{ history: 'ignore' }
+	)
+}
+
 const overrides: TLUiOverrides = {
 	tools: (editor, tools) => {
 		return {
@@ -100,6 +134,11 @@ function App() {
 		setApp(null)
 	}, [])
 
+	const handleMount = useCallback((mountedApp: TldrawAgentApp) => {
+		deleteGeneratedDemoPages(mountedApp.editor)
+		setApp(mountedApp)
+	}, [])
+
 	// Custom components to visualize what the agent is doing
 	// These use TldrawAgentAppContextProvider to access the app/agent
 	const components: TLComponents = useMemo(() => {
@@ -134,7 +173,7 @@ function App() {
 						overrides={overrides}
 						components={components}
 					>
-						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
+						<TldrawAgentAppProvider onMount={handleMount} onUnmount={handleUnmount} />
 					</Tldraw>
 				</div>
 				<ErrorBoundary fallback={ChatPanelFallback}>

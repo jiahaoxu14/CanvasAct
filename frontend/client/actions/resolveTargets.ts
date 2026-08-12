@@ -353,7 +353,7 @@ function filterResolvedIds(
 		seen.add(shapeId)
 		result.push(shapeId)
 	}
-	return selector.max ? result.slice(0, selector.max) : result
+	return result
 }
 
 function finalizeResolution(
@@ -374,7 +374,99 @@ function finalizeResolution(
 			reason: `Target selector "${selector._type}" expected one shape but matched ${shapeIds.length}.`,
 		}
 	}
-	return { status: 'ok', shapeIds }
+	return {
+		status: 'ok',
+		shapeIds: selector.max ? shapeIds.slice(0, selector.max) : shapeIds,
+	}
+}
+
+/**
+ * Reject a model-emitted concrete id when the user's language still names a
+ * duplicated object. A unique selection, explicit request context, or a
+ * longer unique note/text match is sufficient disambiguation.
+ */
+export function isHardCodedSingleTargetAmbiguous(
+	agent: TldrawAgent,
+	shapeId: SimpleShapeId,
+	intent?: string
+) {
+	const { editor } = agent
+	const shape = editor.getShape(`shape:${shapeId}` as TLShapeId)
+	if (!shape) return false
+	if (editor.getSelectedShapeIds().includes(shape.id)) return false
+
+	const request = agent.requests.getActiveRequest()
+	const contextIds = getContextShapeIds(request?.contextItems ?? agent.context.getItems())
+	if (contextIds.includes(shapeId)) return false
+
+	const haystack = normalizeTargetText(
+		[
+			intent,
+			...(request?.agentMessages ?? []),
+			...(request?.userMessages ?? []),
+		]
+			.filter(Boolean)
+			.join('\n')
+	)
+	if (!haystack) return false
+
+	const matchingLabels = getShapeTextCandidates(editor, shape)
+		.map(normalizeTargetText)
+		.filter((label) => label.length > 0 && haystack.includes(label))
+		.sort((a, b) => b.length - a.length)
+	if (matchingLabels.length === 0) return false
+
+	let sawDuplicateMatch = false
+	const duplicateCandidateIds = new Set<TLShapeId>()
+	for (const label of matchingLabels) {
+		const matchingIds = editor
+			.getCurrentPageShapesSorted()
+			.filter((candidate) =>
+				getShapeTextCandidates(editor, candidate).some(
+					(candidateLabel) => normalizeTargetText(candidateLabel) === label
+				)
+			)
+			.map((candidate) => candidate.id)
+		if (matchingIds.length === 1) return false
+		if (matchingIds.length > 1) {
+			sawDuplicateMatch = true
+			for (const matchingId of matchingIds) duplicateCandidateIds.add(matchingId)
+		}
+	}
+	if (
+		sawDuplicateMatch &&
+		request &&
+		isUniquelyPartiallyVisibleTarget(editor, shape.id, duplicateCandidateIds, request, haystack)
+	) {
+		return false
+	}
+
+	return sawDuplicateMatch
+}
+
+function isUniquelyPartiallyVisibleTarget(
+	editor: Editor,
+	targetId: TLShapeId,
+	candidateIds: Set<TLShapeId>,
+	request: AgentRequest,
+	normalizedIntent: string
+) {
+	if (!/(partially visible|partial|clipped|cut off)/.test(normalizedIntent)) return false
+	const viewport = Box.From(request.bounds)
+	const partialIds = Array.from(candidateIds).filter((candidateId) => {
+		const bounds = editor.getShapeMaskedPageBounds(candidateId)
+		return bounds ? Box.Collides(viewport, bounds) && !boxIncludes(viewport, bounds) : false
+	})
+	return partialIds.length === 1 && partialIds[0] === targetId
+}
+
+function boxIncludes(container: Box, child: Box) {
+	return (
+		child.minX >= container.minX &&
+		child.minY >= container.minY &&
+		child.maxX <= container.maxX &&
+		child.maxY <= container.maxY
+	)
 }
 
 export function scheduleTargetResolutionFailure(
@@ -394,6 +486,18 @@ function getShapeText(editor: Editor, shape: TLShape): string | undefined {
 	} catch {
 		return undefined
 	}
+}
+
+function getShapeTextCandidates(editor: Editor, shape: TLShape) {
+	const candidates: string[] = []
+	const text = getShapeText(editor, shape)
+	if (text) candidates.push(text)
+	if (typeof shape.meta.note === 'string') candidates.push(shape.meta.note)
+	return candidates
+}
+
+function normalizeTargetText(value: string) {
+	return value.trim().toLocaleLowerCase()
 }
 
 function textMatches(value: string, query: string, match: 'contains' | 'exact' | 'regex', caseSensitive = false) {

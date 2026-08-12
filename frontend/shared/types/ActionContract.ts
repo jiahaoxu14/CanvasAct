@@ -23,6 +23,21 @@ export type ActionPostcondition =
 			pairs: { labelId: SimpleShapeId; containerId: SimpleShapeId }[]
 	  }
 	| {
+			type: 'objects-inside-containers'
+			pairs: { objectId: SimpleShapeId; containerId: SimpleShapeId; padding?: number }[]
+	  }
+	| {
+			type: 'ordered-layout'
+			shapeIds: SimpleShapeId[]
+			direction: 'horizontal' | 'vertical'
+			gap?: number
+			tolerance?: number
+	  }
+	| {
+			type: 'connection-sequence'
+			shapeIds: SimpleShapeId[]
+	  }
+	| {
 			type: 'no-duplicate-arrows'
 	  }
 	| {

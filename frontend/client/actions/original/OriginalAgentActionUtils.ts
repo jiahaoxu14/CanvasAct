@@ -4,6 +4,7 @@ import type {
 	BringToFrontAction,
 	DistributeAction,
 	MoveAction,
+	PlaceAction,
 	ResizeAction,
 	RotateAction,
 	SendToBackAction,
@@ -17,6 +18,7 @@ import { AlignActionUtil } from '../AlignActionUtil'
 import { BringToFrontActionUtil } from '../BringToFrontActionUtil'
 import { DistributeActionUtil } from '../DistributeActionUtil'
 import { MoveActionUtil } from '../MoveActionUtil'
+import { PlaceActionUtil } from '../PlaceActionUtil'
 import { registerActionUtil } from '../AgentActionUtil'
 import { ResizeActionUtil } from '../ResizeActionUtil'
 import { RotateActionUtil } from '../RotateActionUtil'
@@ -79,6 +81,28 @@ registerActionUtil(
 			action.x = floatX
 			action.y = floatY
 			return action
+		}
+	},
+	originalMode
+)
+
+registerActionUtil(
+	class OriginalPlaceActionUtil extends PlaceActionUtil {
+		static override type = 'place' as const
+		override sanitizeAction(action: Streaming<PlaceAction>, helpers: AgentHelpers) {
+			if (!action.complete) return action
+			const shapeId = helpers.ensureShapeIdExists(action.shapeId as SimpleShapeId)
+			const referenceShapeId = helpers.ensureShapeIdExists(
+				action.referenceShapeId as SimpleShapeId
+			)
+			if (!shapeId || !referenceShapeId) return null
+			action.shapeId = shapeId
+			action.referenceShapeId = referenceShapeId
+			return action
+		}
+
+		override getActionContract() {
+			return null
 		}
 	},
 	originalMode

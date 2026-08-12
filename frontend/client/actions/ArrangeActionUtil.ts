@@ -41,12 +41,29 @@ export const ArrangeActionUtil = registerActionUtil(
 
 		override getActionContract(action: Streaming<ArrangeAction>): ActionContract | null {
 			if (!action.complete || !action.shapeIds) return null
+			const orderedDirection =
+				action.layout === 'row'
+					? 'horizontal'
+					: action.layout === 'column'
+						? 'vertical'
+						: null
 			return {
 				actionType: 'arrange',
 				intent: action.intent,
 				modifiedShapeIds: action.shapeIds,
 				postconditions: [
 					{ type: 'no-overlap', shapeIds: action.shapeIds },
+					...(orderedDirection
+						? ([
+								{
+									type: 'ordered-layout',
+									shapeIds: action.shapeIds,
+									direction: orderedDirection,
+									gap: Math.max(0, action.gap ?? 32),
+									tolerance: 2,
+								},
+							] satisfies ActionContract['postconditions'])
+						: []),
 					{ type: 'objects-visible', shapeIds: action.shapeIds },
 				],
 			}
