@@ -3,7 +3,7 @@ import { convertTldrawShapeToFocusedShape } from '../../shared/format/convertTld
 import { AgentVariant, isAgentVariant } from '../../shared/agentVariants'
 import { AgentModelName } from '../../shared/models'
 import { AgentAction } from '../../shared/types/AgentAction'
-import { AgentStreamAction } from '../../shared/types/ActionChunk'
+import { AgentStreamAction } from '../../shared/types/AgentActionResponse'
 import { AgentInput } from '../../shared/types/AgentInput'
 import { AgentPrompt, BaseAgentPrompt } from '../../shared/types/AgentPrompt'
 import { AgentRequest } from '../../shared/types/AgentRequest'
@@ -27,7 +27,6 @@ import { AgentRequestManager } from './managers/AgentRequestManager'
 import { AgentTodoManager } from './managers/AgentTodoManager'
 import { AgentTrajectoryManager } from './managers/AgentTrajectoryManager'
 import { AgentUserActionTracker } from './managers/AgentUserActionTracker'
-import { AgentVerificationManager } from './managers/AgentVerificationManager'
 import { AgentVariantManager } from './managers/AgentVariantManager'
 
 /**
@@ -115,8 +114,8 @@ export class TldrawAgent {
 	/** The user action tracker associated with this agent. */
 	userAction: AgentUserActionTracker
 
-	/** The verification manager associated with this agent. */
-	verification: AgentVerificationManager
+	/** Invalidates stale async prompt continuations after cancel or reset. */
+	private promptGeneration = 0
 
 	// ==================== Prompt Part Utils ====================
 
@@ -160,7 +159,6 @@ export class TldrawAgent {
 		this.todos = new AgentTodoManager(this)
 		this.trajectories = new AgentTrajectoryManager(this)
 		this.userAction = new AgentUserActionTracker(this)
-		this.verification = new AgentVerificationManager(this)
 
 		// Note: Agent registration is handled by AgentAppAgentsManager.createAgent()
 
@@ -238,7 +236,6 @@ export class TldrawAgent {
 		this.requests.dispose()
 		this.todos.dispose()
 		this.trajectories.dispose()
-		this.verification.dispose()
 		this.variant.dispose()
 
 		// Note: Agent removal from registry is handled by AgentAppAgentsManager.deleteAgent()
@@ -337,8 +334,11 @@ export class TldrawAgent {
 		}
 
 		this.requests.setIsPrompting(true)
+		this.requests.setLastError(null)
 
 		const request = this.requests.getFullRequestFromInput(input)
+		if (!nested) this.promptGeneration += 1
+		const promptGeneration = this.promptGeneration
 		const startingNode = this.mode.getCurrentModeNode()
 		startingNode.onPromptStart?.(this, request)
 
@@ -346,18 +346,25 @@ export class TldrawAgent {
 		try {
 			await this.request(request)
 		} catch (e) {
-			console.error('Error data:', e)
+			if (promptGeneration !== this.promptGeneration) return
+			const message = getUserFacingAgentError(e)
+			this.requests.setLastError(message)
+			this.onError(new Error(message))
+			console.error('[AGENT REQUEST FAILED]', e)
+			if (this.mode.getCurrentModeDefinition().active) this.mode.setMode('idling')
 			this.requests.setIsPrompting(false)
 			this.requests.setCancelFn(null)
 			return
 		}
+		if (promptGeneration !== this.promptGeneration) return
 
 		let modeChanged = true
 		while (!this.requests.getScheduledRequest() && modeChanged) {
 			modeChanged = false
 			const currentModeType = this.mode.getCurrentModeType()
 			const currentModeNode = this.mode.getCurrentModeNode()
-			currentModeNode.onPromptEnd?.(this, request) // in case onPromptEnd switches modes
+			await currentModeNode.onPromptEnd?.(this, request) // in case onPromptEnd switches modes
+			if (promptGeneration !== this.promptGeneration) return
 			const newModeType = this.mode.getCurrentModeType()
 			if (newModeType !== currentModeType) {
 				modeChanged = true
@@ -420,10 +427,11 @@ export class TldrawAgent {
 
 		this.requests.setCancelFn(cancel)
 
-		const results = await promise
-		this.requests.clearActiveRequest()
-
-		return results
+		try {
+			return await promise
+		} finally {
+			this.requests.clearActiveRequest()
+		}
 	}
 
 	/**
@@ -538,6 +546,7 @@ export class TldrawAgent {
 	 * Cancel the agent's current prompt, if one is active.
 	 */
 	cancel() {
+		this.promptGeneration += 1
 		const activeRequest = this.requests.getActiveRequest()
 
 		if (activeRequest) {
@@ -554,6 +563,11 @@ export class TldrawAgent {
 		}
 
 		this.requests.cancel()
+		this.requests.setIsPrompting(false)
+		this.requests.setCancelFn(null)
+		if (!activeRequest && this.mode.getCurrentModeDefinition().active) {
+			this.mode.setMode('idling')
+		}
 	}
 
 	/**
@@ -574,7 +588,6 @@ export class TldrawAgent {
 		this.todos.reset()
 		this.trajectories.reset()
 		this.userAction.reset()
-		this.verification.reset()
 	}
 
 	/**
@@ -597,7 +610,6 @@ export class TldrawAgent {
 		this.requests.reset()
 		this.todos.reset()
 		this.userAction.reset()
-		this.verification.reset()
 		this.variant.setVariant(variant)
 	}
 
@@ -637,10 +649,10 @@ export class TldrawAgent {
 			)
 		}
 
-		const availableActions: readonly AgentAction['_type'][] = modeDefinition.actions
-
 		const requestPromise = (async () => {
 			const prompt = await this.preparePrompt(request, helpers)
+			const availableActions: readonly AgentAction['_type'][] =
+				prompt.mode?.actionTypes ?? modeDefinition.actions
 			let incompleteDiff: RecordsDiff<TLRecord> | null = null
 			const actionPromises: Promise<void>[] = []
 			let trajectoryStatus: 'completed' | 'cancelled' | 'failed' = 'completed'
@@ -656,14 +668,30 @@ export class TldrawAgent {
 					try {
 						editor.run(
 							() => {
+								// Enforce the advertised action vocabulary before resolving an action
+								// utility. Otherwise an unregistered action type can fall back to the
+								// allowed `unknown` no-op and appear to have been accepted.
+								if (action._type && !availableActions.includes(action._type)) {
+									if (action.complete) {
+										console.warn(
+											`[ACTION ROUTING] Skipped unavailable action "${action._type}". Allowed actions: ${availableActions.join(', ')}`
+										)
+									}
+									return
+								}
+
 								const actionUtilType = this.actions.getAgentActionUtilType(action._type)
 								const actionUtil = this.actions.getAgentActionUtil(action._type)
 
 								// If the action is not in the mode's available actions, skip it
 								if (!availableActions.includes(actionUtilType)) {
+									if (action.complete) {
+										console.warn(
+											`[ACTION ROUTING] Skipped unavailable action "${actionUtilType}". Allowed actions: ${availableActions.join(', ')}`
+										)
+									}
 									return
 								}
-
 								// If there was a diff from an incomplete action, revert it so that we can reapply the action
 								// This must happen BEFORE sanitize so we're working with clean state
 								if (incompleteDiff) {
@@ -681,7 +709,7 @@ export class TldrawAgent {
 								}
 
 								// Apply the action to the app and editor
-								const { diff, promise, contract } = this.actions.act(transformedAction, helpers)
+								const { diff, promise } = this.actions.act(transformedAction, helpers)
 								const streamAction = transformedAction as AgentStreamAction
 
 								if (promise) {
@@ -695,8 +723,7 @@ export class TldrawAgent {
 								if (transformedAction.complete) {
 									// Log completed action if debug logging is enabled
 									this.debug.logCompletedAction(transformedAction)
-									this.trajectories.recordAction(streamAction, diff, contract)
-									this.verification.verifyCompletedAction(streamAction, contract, helpers)
+									this.trajectories.recordAction(streamAction, diff)
 								} else {
 									incompleteDiff = diff
 								}
@@ -722,6 +749,7 @@ export class TldrawAgent {
 				trajectoryStatus = 'failed'
 				trajectoryError = e
 				this.onError(e)
+				return
 			} finally {
 				this.trajectories.finishRequest(trajectoryStatus, request, helpers, trajectoryError)
 			}
@@ -797,4 +825,12 @@ export class TldrawAgent {
 			reader.releaseLock()
 		}
 	}
+}
+
+function getUserFacingAgentError(error: unknown) {
+	const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+	if (/incorrect api key|invalid_api_key|status\s*401|\b401\b/i.test(raw)) {
+		return 'OpenAI rejected OPENAI_API_KEY (401). Replace it in frontend/.dev.vars with an active key, then fully restart the dev server.'
+	}
+	return raw || 'The agent request failed before it produced an executable action.'
 }

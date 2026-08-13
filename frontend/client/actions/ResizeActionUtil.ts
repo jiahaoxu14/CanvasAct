@@ -34,10 +34,12 @@ export const ResizeActionUtil = registerActionUtil(
 		override applyAction(action: Streaming<ResizeAction>, helpers: AgentHelpers) {
 			if (
 				!action.shapeIds ||
-				!action.scaleX ||
-				!action.scaleY ||
-				!action.originX ||
-				!action.originY
+				typeof action.scaleX !== 'number' ||
+				typeof action.scaleY !== 'number' ||
+				action.scaleX === 0 ||
+				action.scaleY === 0 ||
+				action.originX === undefined ||
+				action.originY === undefined
 			) {
 				return
 			}

@@ -9,7 +9,10 @@ import {
 	type AgentModelName,
 } from '../shared/models'
 import type { AgentAction } from '../shared/types/AgentAction'
-import type { AgentActionResponse, AgentStreamAction } from '../shared/types/ActionChunk'
+import type {
+	AgentActionResponse,
+	AgentStreamAction,
+} from '../shared/types/AgentActionResponse'
 import type { AgentPrompt } from '../shared/types/AgentPrompt'
 import type { PromptPart } from '../shared/types/PromptPart'
 import { AgentService } from '../worker/do/AgentService'
@@ -110,7 +113,6 @@ type BenchmarkArtifact = {
 
 interface StreamActionEntry {
 	action: AgentAction
-	chunk?: AgentStreamAction['chunk']
 }
 
 const repoRoot = resolve(process.cwd(), '..')
@@ -317,7 +319,7 @@ async function runModelCase(
 	messages.push(...promptMessages)
 	messages.push({
 		role: 'assistant',
-		content: '{"chunks": [{"intent":',
+		content: '{"actions": [{"_type":',
 	})
 
 	const geminiThinkingBudget = modelDefinition.thinking ? 256 : 0
@@ -343,7 +345,7 @@ async function runModelCase(
 
 	const canForceResponseStart =
 		provider === 'anthropic.messages' || provider === 'google.generative-ai'
-	let buffer = canForceResponseStart ? '{"chunks": [{"intent":' : ''
+	let buffer = canForceResponseStart ? '{"actions": [{"_type":' : ''
 	let cursor = 0
 	let maybeIncompleteAction: StreamActionEntry | null = null
 	const actions: AgentAction[] = []
@@ -464,26 +466,6 @@ function buildPrompt(config: EvalConfig, task: EvalTask, modelName: AgentModelNa
 }
 
 function getStreamActionEntries(response: AgentActionResponse): StreamActionEntry[] {
-	if (Array.isArray(response.chunks) && response.chunks.length > 0) {
-		return response.chunks.flatMap((chunk, chunkIndex) => {
-			const actions = Array.isArray(chunk.actions) ? chunk.actions : []
-			const chunkId = chunk.chunkId ?? `chunk-${chunkIndex + 1}`
-			const isKnownComplete = chunkIndex < response.chunks!.length - 1
-			return actions.map((action, actionIndex) => ({
-				action,
-				chunk: {
-					chunkId,
-					intent: chunk.intent,
-					index: chunkIndex,
-					actionIndex,
-					actionCount: actions.length,
-					complete: isKnownComplete,
-					postconditions: chunk.postconditions,
-				},
-			}))
-		})
-	}
-
 	if (Array.isArray(response.actions)) {
 		return response.actions.map((action) => ({ action }))
 	}
@@ -531,17 +513,14 @@ function buildTasks(records: ReturnType<typeof runInitialCanvasAgentEvals>['reco
 		'observation_partial_visibility'
 	)
 	const arrowObservation = required(
-		records.trajectories.task_fix_unbound_arrows?.initialObservation,
-		'task_fix_unbound_arrows.initialObservation'
+		records.observations.observation_arrow_relations,
+		'observation_arrow_relations'
 	)
 	const arrowRelationsObservation = required(
 		records.observations.observation_arrow_relations,
 		'observation_arrow_relations'
 	)
-	const clusterObservation = required(
-		records.trajectories.task_clean_cluster?.initialObservation,
-		'task_clean_cluster.initialObservation'
-	)
+	const clusterObservation = partialVisibilityObservation
 	const decisionObservation = withObjectNotes(arrowRelationsObservation, {
 		end: 'Decision',
 		start: 'Start',
@@ -753,16 +732,6 @@ function buildConfigs(): EvalConfig[] {
 		'rotate',
 		'unknown',
 	] satisfies AgentAction['_type'][]
-	const semanticActions = [
-		...primitiveActions,
-		'arrange',
-		'connect',
-		'cleanupLayout',
-		'fitText',
-		'review',
-		'setMyView',
-	] satisfies AgentAction['_type'][]
-
 	return [
 		{
 			id: 'legacy_shape_list',
@@ -772,18 +741,11 @@ function buildConfigs(): EvalConfig[] {
 			actionTypes: primitiveActions,
 		},
 		{
-			id: 'p0_observation',
-			label: 'P0 CanvasObservation prompt',
-			description: 'Uses CanvasObservation but keeps the primitive-heavy action set.',
+			id: 'canvasact_observation',
+			label: 'CanvasAct observation prompt',
+			description: 'Uses CanvasObservation with the exact same primitive action set.',
 			parts: 'observation',
 			actionTypes: primitiveActions,
-		},
-		{
-			id: 'p2_p3_semantic_chunk_loop',
-			label: 'Current semantic/chunk prompt',
-			description: 'Uses CanvasObservation, selector-aware schemas, semantic actions, and the current chunk-preferring response path.',
-			parts: 'observation',
-			actionTypes: semanticActions,
 		},
 	]
 }

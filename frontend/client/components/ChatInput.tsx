@@ -1,4 +1,4 @@
-import { FormEventHandler, useState } from 'react'
+import { Dispatch, FormEventHandler, SetStateAction } from 'react'
 import { Editor, useValue } from 'tldraw'
 import { AtIcon } from '../../shared/icons/AtIcon'
 import { BrainIcon } from '../../shared/icons/BrainIcon'
@@ -11,14 +11,18 @@ import { SelectionTag } from './SelectionTag'
 export function ChatInput({
 	handleSubmit,
 	inputRef,
+	inputValue,
+	setInputValue,
 }: {
 	handleSubmit: FormEventHandler<HTMLFormElement>
 	inputRef: React.RefObject<HTMLTextAreaElement | null>
+	inputValue: string
+	setInputValue: Dispatch<SetStateAction<string>>
 }) {
 	const agent = useAgent()
 	const { editor } = agent
-	const [inputValue, setInputValue] = useState('')
 	const isGenerating = useValue('isGenerating', () => agent.requests.isGenerating(), [agent])
+	const lastError = useValue('lastRequestError', () => agent.requests.getLastError(), [agent])
 
 	const isContextToolActive = useValue(
 		'isContextToolActive',
@@ -35,10 +39,15 @@ export function ChatInput({
 
 	return (
 		<div className="chat-input">
+			{lastError && (
+				<div className="chat-request-error" role="alert" aria-live="polite">
+					<strong>Request failed</strong>
+					<span>{lastError}</span>
+				</div>
+			)}
 			<form
 				onSubmit={(e) => {
 					e.preventDefault()
-					setInputValue('')
 					handleSubmit(e)
 				}}
 			>

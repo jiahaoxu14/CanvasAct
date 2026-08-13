@@ -13,7 +13,8 @@ const router = AutoRouter<IRequest, [env: Environment, ctx: ExecutionContext]>({
 		console.error(e)
 		return error(e)
 	},
-}).post('/stream', stream)
+})
+	.post('/stream', stream)
 
 export default class extends WorkerEntrypoint<Environment> {
 	override fetch(request: Request): Promise<Response> {

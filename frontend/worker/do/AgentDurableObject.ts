@@ -1,8 +1,9 @@
 import { DurableObject } from 'cloudflare:workers'
 import { AutoRouter, error } from 'itty-router'
-import { AgentStreamAction } from '../../shared/types/ActionChunk'
+import { AgentStreamAction } from '../../shared/types/AgentActionResponse'
 import { AgentPrompt } from '../../shared/types/AgentPrompt'
 import { Environment } from '../environment'
+import { getErrorMessage } from '../getErrorMessage'
 import { AgentService } from './AgentService'
 
 export class AgentDurableObject extends DurableObject<Environment> {
@@ -50,10 +51,11 @@ export class AgentDurableObject extends DurableObject<Environment> {
 				}
 				await writer.close()
 			} catch (error: any) {
-				console.error('Stream error:', error)
+				const message = getErrorMessage(error)
+				console.error('[AGENT STREAM FAILED]', message)
 
 				// Send error through the stream
-				const errorData = `data: ${JSON.stringify({ error: error.message })}\n\n`
+				const errorData = `data: ${JSON.stringify({ error: message })}\n\n`
 				try {
 					await writer.write(encoder.encode(errorData))
 					await writer.close()
@@ -76,4 +78,5 @@ export class AgentDurableObject extends DurableObject<Environment> {
 			},
 		})
 	}
+
 }

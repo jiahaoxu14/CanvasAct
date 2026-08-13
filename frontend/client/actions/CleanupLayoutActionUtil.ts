@@ -1,5 +1,4 @@
 import { CleanupLayoutAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
@@ -37,19 +36,6 @@ export const CleanupLayoutActionUtil = registerActionUtil(
 		override applyAction(action: Streaming<CleanupLayoutAction>) {
 			if (!action.complete || !action.shapeIds) return
 			cleanupLayout(this.editor, action.shapeIds, action)
-		}
-
-		override getActionContract(action: Streaming<CleanupLayoutAction>): ActionContract | null {
-			if (!action.complete || !action.shapeIds) return null
-			return {
-				actionType: 'cleanupLayout',
-				intent: action.intent,
-				modifiedShapeIds: action.shapeIds,
-				postconditions: [
-					{ type: 'no-overlap', shapeIds: action.shapeIds },
-					{ type: 'arrow-bindings', shapeIds: action.shapeIds },
-				],
-			}
 		}
 	}
 )

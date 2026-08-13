@@ -1,5 +1,4 @@
 import { ConnectAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { SimpleShapeId } from '../../shared/types/ids-schema'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
@@ -61,23 +60,6 @@ export const ConnectActionUtil = registerActionUtil(
 			if (!action.complete) return
 			action.createdShapeIds = connectShapes(this.editor, action)
 		}
-
-		override getActionContract(action: Streaming<ConnectAction>): ActionContract | null {
-			if (!action.complete) return null
-			const createdShapeIds = action.createdShapeIds ?? []
-			return {
-				actionType: 'connect',
-				intent: action.intent,
-				modifiedShapeIds: [...(action.sourceShapeIds ?? []), ...(action.targetShapeIds ?? [])],
-				createdShapeIds,
-				postconditions: [
-					{ type: 'created-shapes-exist', shapeIds: createdShapeIds },
-					{ type: 'arrow-bindings', shapeIds: createdShapeIds },
-					{ type: 'no-duplicate-arrows' },
-				],
-			}
-		}
-
 		resolveEndpoint(
 			label: 'source' | 'target',
 			selector: ConnectAction['sourceSelector'],

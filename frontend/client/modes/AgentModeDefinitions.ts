@@ -5,19 +5,13 @@ import { LEGACY_AGENT_MODE } from '../../shared/agentVariants'
 // Import action utils to ensure they register themselves
 import { AddDetailActionUtil } from '../actions/AddDetailActionUtil'
 import { AlignActionUtil } from '../actions/AlignActionUtil'
-import { AnnotateGroupActionUtil } from '../actions/AnnotateGroupActionUtil'
-import { ArrangeActionUtil } from '../actions/ArrangeActionUtil'
 import { BringToFrontActionUtil } from '../actions/BringToFrontActionUtil'
-import { BuildFlowActionUtil } from '../actions/BuildFlowActionUtil'
 import { ClearActionUtil } from '../actions/ClearActionUtil'
-import { CleanupLayoutActionUtil } from '../actions/CleanupLayoutActionUtil'
-import { ConnectActionUtil } from '../actions/ConnectActionUtil'
 import { CountryInfoActionUtil } from '../actions/CountryInfoActionUtil'
 import { CountShapesActionUtil } from '../actions/CountShapesActionUtil'
 import { CreateActionUtil } from '../actions/CreateActionUtil'
 import { DeleteActionUtil } from '../actions/DeleteActionUtil'
 import { DistributeActionUtil } from '../actions/DistributeActionUtil'
-import { FitTextActionUtil } from '../actions/FitTextActionUtil'
 import { LabelActionUtil } from '../actions/LabelActionUtil'
 import { MessageActionUtil } from '../actions/MessageActionUtil'
 import { MoveActionUtil } from '../actions/MoveActionUtil'
@@ -54,6 +48,38 @@ import { TimePartUtil } from '../parts/TimePartUtil'
 import { TodoListPartUtil } from '../parts/TodoListPartUtil'
 import { UserActionHistoryPartUtil } from '../parts/UserActionHistoryPartUtil'
 import { UserViewportBoundsPartUtil } from '../parts/UserViewportBoundsPartUtil'
+
+/**
+ * CanvasAct intentionally uses the same action vocabulary as the legacy agent.
+ * Its sole experimental difference is the additional CanvasObservation prompt
+ * part. Editing, review, linting, and response handling match the legacy agent.
+ */
+const SHARED_ACTION_TYPES = [
+	MessageActionUtil.type,
+	ThinkActionUtil.type,
+	ReviewActionUtil.type,
+	AddDetailActionUtil.type,
+	UpsertTodoListItemActionUtil.type,
+	SetMyViewActionUtil.type,
+	CreateActionUtil.type,
+	DeleteActionUtil.type,
+	UpdateActionUtil.type,
+	LabelActionUtil.type,
+	MoveActionUtil.type,
+	PlaceActionUtil.type,
+	BringToFrontActionUtil.type,
+	SendToBackActionUtil.type,
+	RotateActionUtil.type,
+	ResizeActionUtil.type,
+	AlignActionUtil.type,
+	DistributeActionUtil.type,
+	StackActionUtil.type,
+	ClearActionUtil.type,
+	PenActionUtil.type,
+	CountryInfoActionUtil.type,
+	CountShapesActionUtil.type,
+	UnknownActionUtil.type,
+] as const satisfies readonly AgentAction['_type'][]
 
 /**
  * What an agent can see and do when in a given mode.
@@ -120,34 +146,8 @@ export const AGENT_MODE_DEFINITIONS = [
 			TimePartUtil.type,
 		],
 
-		// Keep the original primitive/planning action set. CanvasAct-only semantic
-		// actions and selector-oriented operations are intentionally omitted.
-		actions: [
-			MessageActionUtil.type,
-			ThinkActionUtil.type,
-			ReviewActionUtil.type,
-			AddDetailActionUtil.type,
-			UpsertTodoListItemActionUtil.type,
-			SetMyViewActionUtil.type,
-			CreateActionUtil.type,
-			DeleteActionUtil.type,
-			UpdateActionUtil.type,
-			LabelActionUtil.type,
-			MoveActionUtil.type,
-			PlaceActionUtil.type,
-			BringToFrontActionUtil.type,
-			SendToBackActionUtil.type,
-			RotateActionUtil.type,
-			ResizeActionUtil.type,
-			AlignActionUtil.type,
-			DistributeActionUtil.type,
-			StackActionUtil.type,
-			ClearActionUtil.type,
-			PenActionUtil.type,
-			CountryInfoActionUtil.type,
-			CountShapesActionUtil.type,
-			UnknownActionUtil.type,
-		],
+		// Keep the original primitive/planning action set.
+		actions: [...SHARED_ACTION_TYPES],
 	},
 	{
 		type: 'working',
@@ -194,54 +194,8 @@ export const AGENT_MODE_DEFINITIONS = [
 			TimePartUtil.type,
 		],
 
-		/**
-		 * Agent actions determine what actions the agent can take.
-		 */
-		actions: [
-			// Communication
-			MessageActionUtil.type,
-
-			// Planning
-			ThinkActionUtil.type,
-			ReviewActionUtil.type,
-			AddDetailActionUtil.type,
-			UpsertTodoListItemActionUtil.type,
-			SetMyViewActionUtil.type,
-
-			// Individual shapes
-			CreateActionUtil.type,
-			DeleteActionUtil.type,
-			UpdateActionUtil.type,
-			LabelActionUtil.type,
-			MoveActionUtil.type,
-
-			// Groups of shapes
-			ArrangeActionUtil.type,
-			BuildFlowActionUtil.type,
-			FitTextActionUtil.type,
-			ConnectActionUtil.type,
-			CleanupLayoutActionUtil.type,
-			AnnotateGroupActionUtil.type,
-			PlaceActionUtil.type,
-			BringToFrontActionUtil.type,
-			SendToBackActionUtil.type,
-			RotateActionUtil.type,
-			ResizeActionUtil.type,
-			AlignActionUtil.type,
-			DistributeActionUtil.type,
-			StackActionUtil.type,
-			ClearActionUtil.type,
-
-			// Drawing
-			PenActionUtil.type,
-
-			// External APIs
-			CountryInfoActionUtil.type,
-			CountShapesActionUtil.type,
-
-			// Internal (required)
-			UnknownActionUtil.type,
-		],
+		/** CanvasAct uses the exact legacy action vocabulary and implementations. */
+		actions: [...SHARED_ACTION_TYPES],
 	},
 ] as const satisfies AgentModeDefinition[]
 

@@ -1,5 +1,4 @@
 import { FitTextAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
@@ -50,16 +49,6 @@ export const FitTextActionUtil = registerActionUtil(
 		override applyAction(action: Streaming<FitTextAction>) {
 			if (!action.complete || !action.shapeIds) return
 			fitTextInShapes(this.editor, action.shapeIds, action)
-		}
-
-		override getActionContract(action: Streaming<FitTextAction>): ActionContract | null {
-			if (!action.complete || !action.shapeIds) return null
-			return {
-				actionType: 'fitText',
-				intent: action.intent,
-				modifiedShapeIds: action.shapeIds,
-				postconditions: [{ type: 'text-fits', shapeIds: action.shapeIds }],
-			}
 		}
 	}
 )

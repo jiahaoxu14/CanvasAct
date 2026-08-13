@@ -159,6 +159,63 @@ body {
 	background-color: var(--tl-color-muted-2);
 }
 
+.scenario-prompt {
+	margin: 0 16px 10px;
+	padding: 12px;
+	border: 1px solid color-mix(in srgb, var(--tl-color-primary) 26%, var(--tl-color-low));
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--tl-color-primary) 7%, var(--tl-color-panel));
+}
+
+.scenario-prompt-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	color: var(--tl-color-primary);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.scenario-prompt-heading button,
+.scenario-prompt-use {
+	border: 0;
+	border-radius: 6px;
+	cursor: pointer;
+	font: 700 10px/1 'Inter', sans-serif;
+}
+
+.scenario-prompt-heading button {
+	padding: 5px 7px;
+	background: transparent;
+	color: var(--tl-color-text-2);
+}
+
+.scenario-prompt-heading button:hover {
+	background: var(--tl-color-muted-2);
+	color: var(--tl-color-text);
+}
+
+.scenario-prompt p {
+	margin: 8px 0 10px;
+	color: var(--tl-color-text);
+	font-size: 11px;
+	line-height: 1.45;
+}
+
+.scenario-prompt-use {
+	width: 100%;
+	padding: 8px 10px;
+	background: var(--tl-color-primary);
+	color: var(--tl-color-panel-contrast);
+}
+
+.scenario-prompt-use:hover {
+	filter: brightness(1.06);
+}
+
 /* Chat Input */
 .chat-input-container {
 	display: flex;
@@ -176,6 +233,27 @@ body {
 	padding: 0px;
 	background-color: var(--tl-color-panel);
 	z-index: 999999;
+}
+
+.chat-request-error {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	margin: 0 0 8px;
+	padding: 9px 10px;
+	border: 1px solid color-mix(in srgb, var(--tl-color-red) 55%, transparent);
+	border-radius: 9px;
+	background: color-mix(in srgb, var(--tl-color-red) 12%, var(--tl-color-panel));
+	color: var(--tl-color-text);
+	font-size: 11px;
+	line-height: 1.35;
+}
+
+.chat-request-error strong {
+	color: var(--tl-color-red);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
 .chat-input form {

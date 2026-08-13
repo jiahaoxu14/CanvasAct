@@ -11,7 +11,7 @@ export interface AgentModeNode {
 	onEnter?(agent: TldrawAgent, fromMode: AgentModeType): void
 	onExit?(agent: TldrawAgent, toMode: AgentModeType): void
 	onPromptStart?(agent: TldrawAgent, request: AgentRequest): void
-	onPromptEnd?(agent: TldrawAgent, request: AgentRequest): void
+	onPromptEnd?(agent: TldrawAgent, request: AgentRequest): void | Promise<void>
 	onPromptCancel?(agent: TldrawAgent, request: AgentRequest): void
 }
 
@@ -26,7 +26,7 @@ export interface AgentModeNode {
  * 1. Add the mode to AGENT_MODE_DEFINITIONS in AgentModeDefinitions.ts
  * 2. Add an entry here with the lifecycle hooks you need
  */
-const workingModeNode: AgentModeNode = {
+const sharedWorkingHooks = {
 	onEnter(agent, fromMode) {
 		// Reset state when entering a working mode.
 		agent.todos.reset()
@@ -47,7 +47,14 @@ const workingModeNode: AgentModeNode = {
 			agent.lints.clearCreatedShapes()
 		}
 	},
+	onPromptCancel(agent, _request) {
+		agent.mode.setMode('idling')
+	},
 
+} satisfies Pick<AgentModeNode, 'onEnter' | 'onExit' | 'onPromptStart' | 'onPromptCancel'>
+
+const legacyWorkingModeNode: AgentModeNode = {
+	...sharedWorkingHooks,
 	onPromptEnd(agent, _request) {
 		const todoList = agent.todos.getTodos()
 		const incompleteTodos = todoList.filter((item) => item.status !== 'done')
@@ -71,9 +78,6 @@ const workingModeNode: AgentModeNode = {
 		agent.mode.setMode('idling')
 	},
 
-	onPromptCancel(agent, _request) {
-		agent.mode.setMode('idling')
-	},
 }
 
 const _AGENT_MODE_CHART: Record<AgentModeDefinition['type'], AgentModeNode> = {
@@ -86,8 +90,10 @@ const _AGENT_MODE_CHART: Record<AgentModeDefinition['type'], AgentModeNode> = {
 			agent.userAction.clearHistory()
 		},
 	},
-	working: workingModeNode,
-	'working-legacy': workingModeNode,
+	// CanvasAct deliberately reuses the original tldraw lifecycle. Its only
+	// runtime difference is the additional structured CanvasObservation part.
+	working: legacyWorkingModeNode,
+	'working-legacy': legacyWorkingModeNode,
 }
 
 /**

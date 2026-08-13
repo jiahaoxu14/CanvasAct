@@ -16,6 +16,7 @@ import type {
 	CleanupLayoutAction,
 	ConnectAction,
 	FitTextAction,
+	RepairDashboardAction,
 } from '../../shared/schema/AgentActionSchemas'
 import type { SimpleShapeId } from '../../shared/types/ids-schema'
 import type { AgentHelpers } from '../AgentHelpers'
@@ -34,6 +35,46 @@ export type ConnectionPair = {
 export interface BuildFlowResult {
 	createdShapeIds: SimpleShapeId[]
 	flowArrowIds: SimpleShapeId[]
+}
+
+export function repairDashboardLayout(
+	editor: Editor,
+	action: Pick<RepairDashboardAction, 'sections' | 'textShapeIds'> & {
+		uniformColumnItems?: boolean
+	}
+) {
+	const requestedTextIds = new Set(action.textShapeIds ?? [])
+	for (const section of action.sections) {
+		const containerBounds = editor.getShapePageBounds(toTlShapeId(section.containerShapeId))
+		if (!containerBounds) continue
+		const padding = Math.max(0, section.padding ?? 16)
+		const headerHeight = Math.max(0, section.headerHeight ?? 32)
+		const gap = Math.max(0, section.gap ?? 16)
+		const inner = new Box(
+			containerBounds.minX + padding,
+			containerBounds.minY + padding + headerHeight,
+			Math.max(0, containerBounds.width - padding * 2),
+			Math.max(0, containerBounds.height - padding * 2 - headerHeight)
+		)
+
+		fitDashboardSectionObjects(
+			editor,
+			section.shapeIds,
+			inner,
+			section.layout,
+			gap,
+			requestedTextIds,
+			action.uniformColumnItems === true
+		)
+		const infos = getShapeInfos(editor, section.shapeIds)
+		if (infos.length === 0) continue
+		layoutDashboardSection(editor, infos, inner, {
+			layout: section.layout,
+			gap,
+			alignX: section.alignX ?? 'start',
+			alignY: section.alignY ?? 'center',
+		})
+	}
 }
 
 export function getFlowArrowIds(editor: Editor, shapeIds: SimpleShapeId[]) {
@@ -391,11 +432,30 @@ function reconcileFlowConnections(
 	const expectedKeys = new Set(expectedPairs.map(connectionKey))
 	const keptByKey = new Map<string, SimpleShapeId>()
 	const arrowIdsToDelete: TLShapeId[] = []
+	const stepBounds = shapeIds
+		.map((id) => editor.getShapePageBounds(toTlShapeId(id)))
+		.filter((bounds): bounds is Box => bounds !== undefined)
+	const common = stepBounds.length > 0 ? Box.Common(stepBounds) : null
+	const staleConnectorRegion = common
+		? new Box(common.minX - 64, common.minY - 64, common.width + 128, common.height + 128)
+		: null
 
 	for (const shape of editor.getCurrentPageShapesSorted()) {
 		if (shape.type !== 'arrow') continue
 		const bindings = getArrowBindings(editor, shape as TLArrowShape)
-		if (!bindings.start || !bindings.end) continue
+		if (!bindings.start || !bindings.end) {
+			const bounds = editor.getShapePageBounds(shape.id)
+			if (
+				options.repairExistingConnectors &&
+				staleConnectorRegion &&
+				bounds &&
+				Box.Collides(staleConnectorRegion, bounds) &&
+				shape.props.color === 'red'
+			) {
+				arrowIdsToDelete.push(shape.id)
+			}
+			continue
+		}
 		const sourceId = convertTldrawIdToSimpleId(bindings.start.toId)
 		const targetId = convertTldrawIdToSimpleId(bindings.end.toId)
 		if (!stepSet.has(sourceId) || !stepSet.has(targetId)) continue
@@ -544,6 +604,124 @@ function arrangeRadial(editor: Editor, infos: ShapeInfo[], box: Box, gap: number
 		const centerY = box.midY + Math.sin(angle) * radius
 		moveShapeBoundsTo(editor, info.id, centerX - info.bounds.w / 2, centerY - info.bounds.h / 2)
 	}
+}
+
+function fitDashboardSectionObjects(
+	editor: Editor,
+	shapeIds: SimpleShapeId[],
+	inner: Box,
+	layout: 'row' | 'column',
+	gap: number,
+	requestedTextIds: Set<SimpleShapeId>,
+	uniformColumnItems: boolean
+) {
+	const itemCount = Math.max(1, shapeIds.length)
+	const maxWidth =
+		layout === 'row'
+			? Math.max(64, (inner.width - gap * (itemCount - 1)) / itemCount)
+			: inner.width
+	const columnItemHeight = Math.max(
+		48,
+		(inner.height - gap * Math.max(0, itemCount - 1)) / itemCount
+	)
+
+	for (const id of shapeIds) {
+		const shape = editor.getShape(toTlShapeId(id))
+		const bounds = editor.getShapePageBounds(toTlShapeId(id))
+		if (!shape || !bounds) continue
+
+		if (shape.type === 'text') {
+			editor.updateShape({
+				id: shape.id,
+				type: shape.type,
+				props: { autoSize: false, w: Math.min(maxWidth, inner.width) },
+			} as any)
+			continue
+		}
+
+		if (bounds.width > maxWidth || requestedTextIds.has(id)) {
+			const props = shape.props as Record<string, unknown>
+			if (typeof props.w === 'number') {
+				const targetWidth =
+					layout === 'column' && requestedTextIds.has(id)
+						? maxWidth
+						: Math.min(props.w, maxWidth)
+				const nextProps: Record<string, unknown> = { w: targetWidth }
+				if (
+					layout === 'column' &&
+					uniformColumnItems &&
+					requestedTextIds.has(id) &&
+					typeof props.h === 'number'
+				) {
+					nextProps.h = columnItemHeight
+					nextProps.growY = 0
+					nextProps.scale = 1
+				}
+				editor.updateShape({
+					id: shape.id,
+					type: shape.type,
+					props: nextProps,
+				} as any)
+			}
+			if (requestedTextIds.has(id) && !uniformColumnItems) {
+				for (let attempt = 0; attempt < 3; attempt++) {
+					const resized = editor.getShape(toTlShapeId(id))
+					if (!resized) break
+					const resizedProps = resized.props as Record<string, unknown>
+					if (typeof resizedProps.growY !== 'number' || resizedProps.growY <= 5) break
+					shrinkTextShape(editor, resized)
+				}
+			}
+		}
+	}
+}
+
+function layoutDashboardSection(
+	editor: Editor,
+	infos: ShapeInfo[],
+	inner: Box,
+	options: {
+		layout: 'row' | 'column'
+		gap: number
+		alignX: 'start' | 'center' | 'end'
+		alignY: 'start' | 'center' | 'end'
+	}
+) {
+	const groupWidth =
+		options.layout === 'row'
+			? sum(infos.map((info) => info.bounds.width)) + options.gap * (infos.length - 1)
+			: Math.max(...infos.map((info) => info.bounds.width))
+	const groupHeight =
+		options.layout === 'column'
+			? sum(infos.map((info) => info.bounds.height)) + options.gap * (infos.length - 1)
+			: Math.max(...infos.map((info) => info.bounds.height))
+	let cursorX = alignedStart(inner.minX, inner.maxX, groupWidth, options.alignX)
+	let cursorY = alignedStart(inner.minY, inner.maxY, groupHeight, options.alignY)
+
+	for (const info of infos) {
+		const x =
+			options.layout === 'column'
+				? alignedStart(inner.minX, inner.maxX, info.bounds.width, options.alignX)
+				: cursorX
+		const y =
+			options.layout === 'row'
+				? alignedStart(inner.minY, inner.maxY, info.bounds.height, options.alignY)
+				: cursorY
+		moveShapeBoundsTo(editor, info.id, x, y)
+		if (options.layout === 'row') cursorX += info.bounds.width + options.gap
+		else cursorY += info.bounds.height + options.gap
+	}
+}
+
+function alignedStart(
+	min: number,
+	max: number,
+	size: number,
+	align: 'start' | 'center' | 'end'
+) {
+	if (align === 'end') return max - size
+	if (align === 'center') return (min + max - size) / 2
+	return min
 }
 
 function moveShapeBoundsTo(editor: Editor, id: SimpleShapeId, x: number, y: number) {

@@ -10,7 +10,7 @@ import type {
 	SendToBackAction,
 	StackAction,
 } from '../../../shared/schema/AgentActionSchemas'
-import { LEGACY_AGENT_MODE } from '../../../shared/agentVariants'
+import { CANVASACT_AGENT_MODE, LEGACY_AGENT_MODE } from '../../../shared/agentVariants'
 import type { SimpleShapeId } from '../../../shared/types/ids-schema'
 import type { Streaming } from '../../../shared/types/Streaming'
 import type { AgentHelpers } from '../../AgentHelpers'
@@ -25,7 +25,7 @@ import { RotateActionUtil } from '../RotateActionUtil'
 import { SendToBackActionUtil } from '../SendToBackActionUtil'
 import { StackActionUtil } from '../StackActionUtil'
 
-const originalMode = { forModes: [LEGACY_AGENT_MODE] }
+const originalMode = { forModes: [LEGACY_AGENT_MODE, CANVASACT_AGENT_MODE] }
 
 registerActionUtil(
 	class OriginalAlignActionUtil extends AlignActionUtil {
@@ -99,10 +99,6 @@ registerActionUtil(
 			action.shapeId = shapeId
 			action.referenceShapeId = referenceShapeId
 			return action
-		}
-
-		override getActionContract() {
-			return null
 		}
 	},
 	originalMode

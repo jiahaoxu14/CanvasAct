@@ -68,7 +68,8 @@ export function canActionBeGrouped({
 	const groupAcceptance = group.items[0]?.acceptance
 	if (groupAcceptance !== item.acceptance) return false
 
-	const prevAction = group.items.at(-1)?.action
+	const previousItem = group.items.at(-1)
+	const prevAction = previousItem?.action
 	if (!prevAction) return false
 
 	const actionInfo = getActionInfo(item.action, agent)

@@ -26,8 +26,8 @@ export const CountryInfoActionUtil = registerActionUtil(
 	}
 )
 
-export async function fetchCountryInfo(code: string) {
-	const response = await fetch(`https://restcountries.com/v3.1/alpha/${code}`)
+export async function fetchCountryInfo(code: string, signal?: AbortSignal) {
+	const response = await fetch(`https://restcountries.com/v3.1/alpha/${code}`, { signal })
 
 	if (!response.ok) {
 		throw new Error(`Country API returned status ${response.status}, ${response.statusText}`)

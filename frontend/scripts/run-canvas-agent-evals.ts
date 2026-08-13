@@ -7,7 +7,7 @@ const run = runInitialCanvasAgentEvals()
 const { result, artifacts } = run
 const outputPath = join(process.cwd(), '.tsbuild', 'evals', 'canvas-agent-initial.json')
 const output = {
-	configName: 'p3_chunk_loop',
+	configName: 'canvas_observation_only',
 	gitCommit: getGitCommit(),
 	generatedAt: new Date().toISOString(),
 	...run,

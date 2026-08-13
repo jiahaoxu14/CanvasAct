@@ -21,6 +21,10 @@ import { AgentViewportBoundsHighlights } from './components/highlights/AgentView
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
+import {
+	ensureResearchWorkspaceScenarioPage,
+	RESEARCH_WORKSPACE_SCENARIO_VERSION,
+} from './usageScenario/researchWorkspaceScenario'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
@@ -32,6 +36,7 @@ const LEGACY_CANVAS_PERSISTENCE_KEYS = ['canvasact-agent', 'canvasact-agent-demo
 const TLDRAW_DATABASE_PREFIX = 'TLDRAW_DOCUMENT_v2'
 const TLDRAW_ASSET_DATABASE_PREFIX = 'TLDRAW_ASSET_STORE_v1'
 const TLDRAW_DATABASE_INDEX_KEY = 'TLDRAW_DB_NAME_INDEX_v2'
+const RESEARCH_WORKSPACE_MIGRATION_KEY = 'canvasact-research-workspace-scenario-version'
 
 function deleteIndexedDatabase(name: string) {
 	return new Promise<void>((resolve, reject) => {
@@ -62,30 +67,45 @@ async function deleteLegacyCanvasSaves() {
 	}
 }
 
-function deleteGeneratedDemoPages(editor: Editor) {
-	const generatedPages = editor
-		.getPages()
-		.filter((page) => typeof page.meta.canvasActDemoVersion === 'string')
-	if (generatedPages.length === 0) return
+const REMOVED_CASE_STUDY_PAGE_NAME =
+	/\bcase[\s_-]*study(?:[\s_-]*(?:1|2)|\s*·\s*(?:coastal storm handoff|metrocare capacity dashboard))\b/i
+const REMOVED_USAGE_SCENARIO_IDS = new Set([
+	'operational-workflow',
+	'dashboard-cleanup',
+	'coastal-storm-handoff',
+	'metrocare-capacity-dashboard',
+	'evidence-synthesis-board',
+])
 
-	const generatedPageIds = new Set(generatedPages.map((page) => page.id))
+function deleteRemovedPrototypePages(editor: Editor) {
+	const removedPages = editor.getPages().filter((page) => {
+		const usageScenarioId = page.meta.canvasActUsageScenarioId
+		return (
+			typeof page.meta.canvasActDemoVersion === 'string' ||
+			(typeof usageScenarioId === 'string' && REMOVED_USAGE_SCENARIO_IDS.has(usageScenarioId)) ||
+			REMOVED_CASE_STUDY_PAGE_NAME.test(page.name)
+		)
+	})
+	if (removedPages.length === 0) return
+
+	const removedPageIds = new Set(removedPages.map((page) => page.id))
 	editor.run(
 		() => {
 			let remainingPages = editor
 				.getPages()
-				.filter((page) => !generatedPageIds.has(page.id))
+				.filter((page) => !removedPageIds.has(page.id))
 			if (remainingPages.length === 0) {
 				editor.createPage({ name: 'Page 1' })
 				remainingPages = editor
 					.getPages()
-					.filter((page) => !generatedPageIds.has(page.id))
+					.filter((page) => !removedPageIds.has(page.id))
 			}
 
-			if (generatedPageIds.has(editor.getCurrentPageId()) && remainingPages[0]) {
+			if (removedPageIds.has(editor.getCurrentPageId()) && remainingPages[0]) {
 				editor.setCurrentPage(remainingPages[0].id)
 			}
 
-			for (const page of generatedPages) {
+			for (const page of removedPages) {
 				if (editor.getPage(page.id) && editor.getPages().length > 1) {
 					editor.deletePage(page.id)
 				}
@@ -135,7 +155,18 @@ function App() {
 	}, [])
 
 	const handleMount = useCallback((mountedApp: TldrawAgentApp) => {
-		deleteGeneratedDemoPages(mountedApp.editor)
+		deleteRemovedPrototypePages(mountedApp.editor)
+		ensureResearchWorkspaceScenarioPage(mountedApp.editor)
+		if (
+			window.localStorage.getItem(RESEARCH_WORKSPACE_MIGRATION_KEY) !==
+			RESEARCH_WORKSPACE_SCENARIO_VERSION
+		) {
+			mountedApp.agents.resetAllAgents()
+			window.localStorage.setItem(
+				RESEARCH_WORKSPACE_MIGRATION_KEY,
+				RESEARCH_WORKSPACE_SCENARIO_VERSION
+			)
+		}
 		setApp(mountedApp)
 	}, [])
 

@@ -1,6 +1,4 @@
 import z from 'zod'
-import { isLegacyAgentMode } from '../agentVariants'
-import { buildActionChunkSchema } from './ActionChunkSchemas'
 import { ActionMeta, AgentAction, getActionSchemaForMode } from '../types/AgentAction'
 
 /**
@@ -30,6 +28,19 @@ export function stripInternalMeta(obj: object): object {
 }
 
 export function buildResponseSchema(actionTypes: AgentAction['_type'][], mode: string) {
+	const schema = buildResponseZodSchema(actionTypes, mode)
+
+	return stripInternalMeta(z.toJSONSchema(schema, { reused: 'ref' }))
+}
+
+/**
+ * Build the runtime response schema for an agent mode.
+ *
+ * Keep this as the single source of truth for both the JSON schema shown to the
+ * model. CanvasAct intentionally uses the same top-level action response as
+ * the original tldraw agent; its method difference is observation only.
+ */
+export function buildResponseZodSchema(actionTypes: AgentAction['_type'][], mode: string) {
 	const actionSchemas = actionTypes
 		.map((type) => getActionSchemaForMode(type, mode))
 		.filter((schema) => schema !== undefined)
@@ -38,17 +49,5 @@ export function buildResponseSchema(actionTypes: AgentAction['_type'][], mode: s
 		throw new Error('No action schemas found for the provided action types')
 	}
 
-	const actionSchema = z.union(actionSchemas)
-	const schema = isLegacyAgentMode(mode)
-		? z.object({ actions: z.array(actionSchema) })
-		: z.union([
-				z.object({
-					chunks: z.array(buildActionChunkSchema(actionSchema)).min(1),
-				}),
-				z.object({
-					actions: z.array(actionSchema).min(1),
-				}),
-			])
-
-	return stripInternalMeta(z.toJSONSchema(schema, { reused: 'ref' }))
+	return z.object({ actions: z.array(z.union(actionSchemas)) })
 }

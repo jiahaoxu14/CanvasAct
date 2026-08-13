@@ -1,0 +1,252 @@
+- generic [ref=f2e1]:
+  - application "tldraw" [ref=f2e3]:
+    - generic [ref=f2e7]:
+      - generic [ref=f2e9]:
+        - paragraph [ref=f2e10]: ANALYST ANNOTATION
+        - paragraph [ref=f2e11]: Do not collapse competing hypotheses before the vendor bridge confirms scope.
+      - generic [ref=f2e13]:
+        - paragraph [ref=f2e14]: 07:31 · API latency spike
+        - paragraph [ref=f2e15]: ARCHIVED · synthetic canary test
+      - generic [ref=f2e17]:
+        - paragraph [ref=f2e18]: 07:36 · API latency spike
+        - paragraph [ref=f2e19]: ARCHIVED · resolved cache warm-up
+      - paragraph [ref=f2e23]: ARCHIVED EVIDENCE / DO NOT MODIFY
+      - generic [ref=f2e25]:
+        - paragraph [ref=f2e26]: 06:48 · Policy alert
+        - paragraph [ref=f2e27]: ARCHIVED · staging environment only
+      - paragraph [ref=f2e30]: 09:00 BRIEFING · ACTIVE
+      - generic [ref=f2e32]:
+        - paragraph [ref=f2e33]: 08:07 · API latency spike
+        - paragraph [ref=f2e34]: Admin endpoints slow only for sessions carrying the newly issued token family.
+      - generic [ref=f2e36]:
+        - paragraph [ref=f2e37]: 08:11 · API latency spike
+        - paragraph [ref=f2e38]: Dependency spans add 1.8 s before timeout while internal service time stays flat.
+      - generic [ref=f2e40]:
+        - paragraph [ref=f2e41]: 08:13 · Replica mismatch
+        - paragraph [ref=f2e42]: Two replicas advertise an obsolete allowlist hash; the remaining six are current.
+      - generic [ref=f2e44]:
+        - paragraph [ref=f2e45]: 07:54 · Policy bundle deployed
+        - paragraph [ref=f2e46]: A routing-policy bundle reaches production four minutes before the first alert.
+      - generic [ref=f2e48]:
+        - paragraph [ref=f2e49]: 08:19 · Privilege-reset calls
+        - paragraph [ref=f2e50]: Three callers report password resets they did not initiate; all share the same tenant.
+      - generic [ref=f2e52]:
+        - paragraph [ref=f2e53]: 07:58 · Token refresh anomaly
+        - paragraph [ref=f2e54]: 43 impossible-travel logins begin within two minutes of a refresh-token burst.
+      - generic [ref=f2e56]:
+        - paragraph [ref=f2e57]: 08:28 · Restart clears one cluster
+        - paragraph [ref=f2e58]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+      - generic [ref=f2e60]:
+        - paragraph [ref=f2e61]: 08:02 · Regional error bulletin
+        - paragraph [ref=f2e62]: Status feed reports elevated 502s in us-east, matching the first customer failures.
+      - generic [ref=f2e64]:
+        - paragraph [ref=f2e65]: 08:23 · Failover acknowledged
+        - paragraph [ref=f2e66]: Provider begins traffic shift; our external errors fall before any internal change.
+      - generic [ref=f2e68]:
+        - paragraph [ref=f2e69]: H1 / CREDENTIAL COMPROMISE
+        - paragraph [ref=f2e70]: 9 active clues · confidence under review
+      - generic [ref=f2e72]:
+        - paragraph [ref=f2e73]: H2 / THIRD-PARTY OUTAGE
+        - paragraph [ref=f2e74]: 6 active clues · provider correlation
+      - generic [ref=f2e76]:
+        - paragraph [ref=f2e77]: H3 / CONFIGURATION DRIFT
+        - paragraph [ref=f2e78]: 5 active clues · deployment correlation
+      - paragraph [ref=f2e81]: ANALYST NOTES · 8 entries
+      - paragraph [ref=f2e84]: APM TRACES · 24 spans
+      - paragraph [ref=f2e87]: IAM LOGS · 317 events
+      - paragraph [ref=f2e91]: PROVENANCE SOURCES
+      - paragraph [ref=f2e94]: VENDOR STATUS · 3 posts
+      - generic [ref=f2e96]:
+        - paragraph [ref=f2e97]: FINISH CHECK
+        - paragraph [ref=f2e98]: □ 9 active cards contained
+        - paragraph [ref=f2e99]: □ chronological in each lane
+        - paragraph [ref=f2e100]: □ 18 links preserved
+        - paragraph [ref=f2e101]: □ protected region unchanged
+      - paragraph [ref=f2e105]: INCIDENT ANALYSIS CELL / 08:42
+      - paragraph [ref=f2e109]: Evidence synthesis / Morning briefing
+    - generic:
+      - button "Move focus to canvas" [ref=f2e110] [cursor=pointer]
+      - generic:
+        - generic:
+          - navigation:
+            - generic:
+              - button "Menu" [ref=f2e111] [cursor=pointer]
+              - button "Case Study · Evidence Briefing Board" [ref=f2e113] [cursor=pointer]
+              - toolbar "Actions":
+                - button "Undo — ⌘ Z" [disabled] [ref=f2e116]
+                - button "Redo — ⌘ ⇧ Z" [disabled] [ref=f2e118]
+                - button "Delete — ⌫" [disabled] [ref=f2e120]
+                - button "Duplicate — ⌘ D" [disabled] [ref=f2e122]
+                - button "Actions" [ref=f2e124] [cursor=pointer]
+          - button "Restore the original case study" [ref=f2e126] [cursor=pointer]:
+            - generic [ref=f2e127]: Reset scenario
+        - generic [ref=f2e128]:
+          - generic [ref=f2e129]:
+            - toolbar "Color" [ref=f2e130]:
+              - radiogroup [ref=f2e131]:
+                - radio "Color — Black (selected)" [checked] [ref=f2e132] [cursor=pointer]
+                - radio "Color — Grey" [ref=f2e134] [cursor=pointer]
+                - radio "Color — Light violet" [ref=f2e136] [cursor=pointer]
+                - radio "Color — Violet" [ref=f2e138] [cursor=pointer]
+                - radio "Color — Blue" [ref=f2e140] [cursor=pointer]
+                - radio "Color — Light blue" [ref=f2e142] [cursor=pointer]
+                - radio "Color — Yellow" [ref=f2e144] [cursor=pointer]
+                - radio "Color — Orange" [ref=f2e146] [cursor=pointer]
+                - radio "Color — Green" [ref=f2e148] [cursor=pointer]
+                - radio "Color — Light green" [ref=f2e150] [cursor=pointer]
+                - radio "Color — Light red" [ref=f2e152] [cursor=pointer]
+                - radio "Color — Red" [ref=f2e154] [cursor=pointer]
+            - generic [ref=f2e157]:
+              - generic [ref=f2e158] [cursor=pointer]
+              - slider "Opacity — 100%" [ref=f2e161]
+          - generic [ref=f2e162]:
+            - toolbar "Fill" [ref=f2e163]:
+              - radiogroup [ref=f2e164]:
+                - radio "Fill — None (selected)" [checked] [ref=f2e165] [cursor=pointer]
+                - radio "Fill — Semi" [ref=f2e167] [cursor=pointer]
+                - radio "Fill — Solid" [ref=f2e169] [cursor=pointer]
+              - button "Fill — None" [ref=f2e172] [cursor=pointer]
+            - toolbar "Dash" [ref=f2e174]:
+              - radiogroup [ref=f2e175]:
+                - radio "Dash — Draw (selected)" [checked] [ref=f2e176] [cursor=pointer]
+                - radio "Dash — Dashed" [ref=f2e178] [cursor=pointer]
+                - radio "Dash — Dotted" [ref=f2e180] [cursor=pointer]
+                - radio "Dash — Solid" [ref=f2e182] [cursor=pointer]
+            - toolbar "Size" [ref=f2e184]:
+              - radiogroup [ref=f2e185]:
+                - radio "Size — Small (selected)" [checked] [ref=f2e186] [cursor=pointer]
+                - radio "Size — Medium" [ref=f2e188] [cursor=pointer]
+                - radio "Size — Large" [ref=f2e190] [cursor=pointer]
+                - radio "Size — Extra large" [ref=f2e192] [cursor=pointer]
+      - generic:
+        - generic:
+          - toolbar "Navigation" [ref=f2e195]:
+            - button "Zoom — 57%" [ref=f2e196] [cursor=pointer]:
+              - generic [ref=f2e197]: 57%
+            - button "Toggle minimap" [ref=f2e198] [cursor=pointer]
+          - toolbar "Tools" [ref=f2e200]:
+            - generic [ref=f2e201]:
+              - button "Select — V" [pressed] [ref=f2e202] [cursor=pointer]
+              - button "Hand — H" [ref=f2e204] [cursor=pointer]
+              - button "Draw — D" [ref=f2e206] [cursor=pointer]
+              - button "Eraser — E" [ref=f2e208] [cursor=pointer]
+              - button "Arrow — A" [ref=f2e210] [cursor=pointer]
+              - button "Text — T" [ref=f2e212] [cursor=pointer]
+              - button "Note — N" [ref=f2e214] [cursor=pointer]
+              - button "Media — ⌘ U" [ref=f2e216] [cursor=pointer]
+              - button "Rectangle — R" [ref=f2e218] [cursor=pointer]
+            - button "More" [ref=f2e221] [cursor=pointer]
+      - region "Notifications (F8)":
+        - list
+    - button "Get a license for production" [ref=f2e224] [cursor=pointer]
+  - generic [ref=f2e225]:
+    - generic [ref=f2e226]:
+      - generic [ref=f2e227]:
+        - generic [ref=f2e228]: Agent
+        - group "Agent implementation" [ref=f2e229]:
+          - button "CanvasAct selected. Switching starts a fresh chat and keeps the canvas." [pressed] [ref=f2e230] [cursor=pointer]: CanvasAct
+          - button "Switch to Original tldraw. Switching starts a fresh chat and keeps the canvas." [ref=f2e231] [cursor=pointer]: Original
+      - button "Start a new chat" [ref=f2e232] [cursor=pointer]: +
+    - generic [ref=f2e234]:
+      - generic [ref=f2e235]: Prepare the active evidence board for the 09:00 briefing. Place each active evidence card in the hypothesis lane it supports, order evidence by timestamp within each lane, make every excerpt readable, preserve all source and hypothesis links, and leave archived evidence and analyst annotations unchanged. Verify the board before finishing.
+      - generic [ref=f2e238]:
+        - generic [ref=f2e239]:
+          - button "Reject" [ref=f2e240] [cursor=pointer]
+          - button "Accept" [ref=f2e241] [cursor=pointer]
+        - generic [ref=f2e242]:
+          - generic [ref=f2e243]: Organize active evidence cards into their supported hypothesis lanes in chronological top-to-bottom order, keeping all source and hypothesis links preserved while leaving protected archive and annotation content unchanged.
+          - generic [ref=f2e247]: Repack the nine active evidence cards into their fixed hypothesis lanes with tighter vertical spacing and sufficient header clearance while preserving all existing provenance and support arrows.
+      - button "Thought for 4 seconds" [ref=f2e253] [cursor=pointer]
+      - generic [ref=f2e257]:
+        - generic [ref=f2e258]:
+          - button "Reject" [ref=f2e259] [cursor=pointer]
+          - button "Accept" [ref=f2e260] [cursor=pointer]
+        - generic [ref=f2e261]:
+          - generic [ref=f2e262]: Narrow and shorten the three H1 evidence cards so all fit inside the H1 lane above the protected archive while preserving their content.
+          - generic [ref=f2e266]: Narrow and shorten the three H2 evidence cards so all fit inside the H2 lane above the protected archive while preserving their content.
+          - generic [ref=f2e270]: Narrow and shorten the three H3 evidence cards so all fit inside the H3 lane above the protected archive while preserving their content.
+      - paragraph [ref=f2e282]: Shrink text on all active evidence cards so each excerpt becomes readable within the resized cards.
+      - generic [ref=f2e283]:
+        - generic [ref=f2e284]:
+          - button "Reject" [ref=f2e285] [cursor=pointer]
+          - button "Accept" [ref=f2e286] [cursor=pointer]
+        - generic [ref=f2e287]: Restack the resized active evidence cards in chronological order inside their fixed hypothesis lanes while preserving all provenance and support arrows.
+      - paragraph [ref=f2e301]:
+        - strong [ref=f2e302]: "Review:"
+        - text: Verify active evidence cards are contained within their hypothesis lanes, excerpts are readable, links are preserved, and protected archive and annotation regions remain unchanged.
+      - generic [ref=f2e303]:
+        - generic [ref=f2e304]:
+          - button "Reject" [ref=f2e305] [cursor=pointer]
+          - button "Accept" [ref=f2e306] [cursor=pointer]
+        - generic [ref=f2e307]:
+          - generic [ref=f2e308]: Nudge the H2 bottom evidence card upward so it clears the archive boundary and sits fully inside the H2 lane.
+          - generic [ref=f2e312]: Nudge the H3 bottom evidence card upward so it clears the archive boundary and sits fully inside the H3 lane.
+      - paragraph [ref=f2e325]:
+        - strong [ref=f2e326]: "Review:"
+        - text: Verify the two adjusted bottom evidence cards are fully contained within their lanes, all active evidence remains readable, links are preserved, and archived evidence plus analyst annotations remain unchanged.
+      - generic [ref=f2e327]:
+        - generic [ref=f2e328]:
+          - button "Reject" [ref=f2e329] [cursor=pointer]
+          - button "Accept" [ref=f2e330] [cursor=pointer]
+        - generic [ref=f2e331]:
+          - generic [ref=f2e332]: Move the H2 bottom evidence card slightly upward so it clears the lane bottom padding.
+          - generic [ref=f2e336]: Move the H3 bottom evidence card slightly upward so it clears the lane bottom padding.
+        - application "tldraw" [ref=f2e341]:
+          - generic [ref=f2e345]:
+            - generic [ref=f2e347]:
+              - paragraph [ref=f2e348]: 08:28 · Restart clears one cluster
+              - paragraph [ref=f2e349]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+            - generic [ref=f2e351]:
+              - paragraph [ref=f2e352]: 08:28 · Restart clears one cluster
+              - paragraph [ref=f2e353]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+            - generic [ref=f2e355]:
+              - paragraph [ref=f2e356]: 08:23 · Failover acknowledged
+              - paragraph [ref=f2e357]: Provider begins traffic shift; our external errors fall before any internal change.
+            - generic [ref=f2e359]:
+              - paragraph [ref=f2e360]: 08:23 · Failover acknowledged
+              - paragraph [ref=f2e361]: Provider begins traffic shift; our external errors fall before any internal change.
+      - paragraph [ref=f2e372]:
+        - strong [ref=f2e373]: "Review:"
+        - text: Verify the adjusted bottom evidence cards are fully contained within their lanes, all active evidence remains readable, links are preserved, and archived evidence plus analyst annotations remain unchanged.
+      - generic [ref=f2e374]:
+        - generic [ref=f2e375]:
+          - button "Reject" [ref=f2e376] [cursor=pointer]
+          - button "Accept" [ref=f2e377] [cursor=pointer]
+        - generic [ref=f2e378]: Move the H3 bottom evidence card slightly upward so it clears the lane bottom padding.
+        - application "tldraw" [ref=f2e384]:
+          - generic [ref=f2e388]:
+            - generic [ref=f2e390]:
+              - paragraph [ref=f2e391]: 08:28 · Restart clears one cluster
+              - paragraph [ref=f2e392]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+            - generic [ref=f2e394]:
+              - paragraph [ref=f2e395]: 08:28 · Restart clears one cluster
+              - paragraph [ref=f2e396]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+      - paragraph [ref=f2e407]:
+        - strong [ref=f2e408]: "Review:"
+        - text: Verify the adjusted H3 bottom evidence card is fully contained within its lane, all active evidence remains readable, links are preserved, and archived evidence plus analyst annotations remain unchanged.
+    - generic [ref=f2e409]:
+      - region "Case study prompt" [ref=f2e410]:
+        - generic [ref=f2e411]:
+          - generic [ref=f2e412]: Case study prompt
+          - button "Copy" [ref=f2e413] [cursor=pointer]
+        - paragraph [ref=f2e414]: Prepare the active evidence board for the 09:00 briefing. Place each active evidence card in the hypothesis lane it supports, order evidence by timestamp within each lane, make every excerpt readable, preserve all source and hypothesis links, and leave archived evidence and analyst annotations unchanged. Verify the board before finishing.
+        - button "Use prompt" [ref=f2e415] [cursor=pointer]
+      - generic [ref=f2e417]:
+        - generic [ref=f2e419]:
+          - generic [ref=f2e420]: Add Context
+          - combobox [ref=f2e424] [cursor=pointer]:
+            - option "Pick Shapes"
+            - option "Pick Area"
+            - option [selected]
+        - textbox "Ask, learn, brainstorm, draw" [ref=f2e425]
+        - generic [ref=f2e426]:
+          - generic [ref=f2e428]:
+            - generic [ref=f2e429]: gpt-5.4
+            - combobox [ref=f2e438]:
+              - option "claude-sonnet-4-5"
+              - option "claude-opus-4-5"
+              - option "gemini-3-pro-preview"
+              - option "gemini-3-flash-preview"
+              - option "gpt-5.4" [selected]
+              - option "gpt-5.4-mini"
+          - button "⬆" [disabled] [ref=f2e441]

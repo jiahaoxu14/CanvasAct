@@ -1,10 +1,10 @@
 import z from 'zod'
 import { FocusedTextAnchorSchema } from '../format/FocusedShape'
-import { LEGACY_AGENT_MODE } from '../agentVariants'
+import { CANVASACT_AGENT_MODE, LEGACY_AGENT_MODE } from '../agentVariants'
 import { SimpleShapeIdSchema } from '../types/ids-schema'
 import { registerActionSchema } from './AgentActionSchemaRegistry'
 
-const originalMode = { forModes: [LEGACY_AGENT_MODE] }
+const originalMode = { forModes: [LEGACY_AGENT_MODE, CANVASACT_AGENT_MODE] }
 
 registerActionSchema(
 	'align',

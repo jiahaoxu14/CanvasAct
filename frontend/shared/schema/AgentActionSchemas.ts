@@ -38,7 +38,6 @@ export const AlignAction = z
 	.object({
 		_type: z.literal('align'),
 		alignment: z.enum(['top', 'bottom', 'left', 'right', 'center-horizontal', 'center-vertical']),
-		gap: z.number(),
 		intent: z.string(),
 		shapeIds: z.array(SimpleShapeIdSchema).optional(),
 		targetSelector: TargetSelectorSchema.optional(),
@@ -46,7 +45,7 @@ export const AlignAction = z
 	.meta({
 		title: 'Align',
 		description:
-			'The AI aligns shapes to each other on an axis. Prefer targetSelector for selected/context/semantic targets; use shapeIds only when ids are explicit and unambiguous.',
+			'The AI aligns shapes on one axis without changing their spacing on the other axis. Pair align with stack when a row or column also needs an exact non-overlapping gap. Prefer targetSelector for selected/context/semantic targets; use shapeIds only when ids are explicit and unambiguous.',
 		_systemPromptCategory: 'edit',
 	})
 
@@ -252,12 +251,87 @@ export const CleanupLayoutAction = z
 
 export type CleanupLayoutAction = z.infer<typeof CleanupLayoutAction>
 
+// Repair Dashboard Action
+export const RepairDashboardAction = z
+	.object({
+		_type: z.literal('repairDashboard'),
+		intent: z.string(),
+		sections: z
+			.array(
+				z.object({
+					containerShapeId: SimpleShapeIdSchema,
+					shapeIds: z.array(SimpleShapeIdSchema).min(1),
+					layout: z.enum(['row', 'column']),
+					gap: z.number().nonnegative().optional(),
+					padding: z.number().nonnegative().optional(),
+					headerHeight: z.number().nonnegative().optional(),
+					alignX: z.enum(['start', 'center', 'end']).optional(),
+					alignY: z.enum(['start', 'center', 'end']).optional(),
+				})
+			)
+			.min(1),
+		textShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		preservedArrowIds: z.array(SimpleShapeIdSchema).optional(),
+	})
+	.meta({
+		title: 'Repair Dashboard',
+		description:
+			'The AI repairs a dashboard through section plans. In one deterministic action, the app fits movable content, lays each group out inside its fixed container, avoids overlap, preserves existing bound relationships, and verifies containment, text fit, spacing, and arrow bindings.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type RepairDashboardAction = z.infer<typeof RepairDashboardAction>
+
+// Organize Board Action
+export const OrganizeBoardAction = z
+	.object({
+		_type: z.literal('organizeBoard'),
+		intent: z.string(),
+		groups: z
+			.array(
+				z.object({
+					containerShapeId: SimpleShapeIdSchema,
+					shapeIds: z.array(SimpleShapeIdSchema).min(1),
+					layout: z.enum(['row', 'column']),
+					gap: z.number().nonnegative().optional(),
+					padding: z.number().nonnegative().optional(),
+					headerHeight: z.number().nonnegative().optional(),
+					alignX: z.enum(['start', 'center', 'end']).optional(),
+					alignY: z.enum(['start', 'center', 'end']).optional(),
+				})
+			)
+			.min(1),
+		textShapeIds: z.array(SimpleShapeIdSchema).optional(),
+		preservedArrowIds: z.array(SimpleShapeIdSchema).optional(),
+		expectedConnections: z
+			.array(
+				z.object({
+					arrowId: SimpleShapeIdSchema,
+					sourceId: SimpleShapeIdSchema,
+					targetId: SimpleShapeIdSchema,
+				})
+			)
+			.optional()
+			.describe(
+				'Runtime-derived relationship endpoints. Omit this field; the app overwrites it from the pre-action canvas.'
+			),
+	})
+	.meta({
+		title: 'Organize Board',
+		description:
+			'The AI supplies relation-aware groups and their exact reading order. In one deterministic operation, the app fits and lays out movable objects inside fixed containers, preserves named bound relationships, leaves non-target content untouched, and verifies the completed board.',
+		_systemPromptCategory: 'edit',
+	})
+
+export type OrganizeBoardAction = z.infer<typeof OrganizeBoardAction>
+
 // Build Flow Action
 export const BuildFlowAction = z
 	.object({
 		_type: z.literal('buildFlow'),
 		intent: z.string(),
 		shapeIds: z.array(SimpleShapeIdSchema).min(2),
+		containerShapeId: SimpleShapeIdSchema.optional(),
 		direction: z.enum(['horizontal', 'vertical']),
 		gap: z.number().nonnegative().optional(),
 		region: ActionRegionSchema.optional(),

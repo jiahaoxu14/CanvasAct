@@ -3,7 +3,8 @@ import { AlignAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
-import { resolveTargetSelectorForAction } from './resolveTargets'
+import { getLayoutClusters } from './getLayoutClusters'
+import { resolveTargetSelectorForAction, scheduleTargetResolutionFailure } from './resolveTargets'
 
 export const AlignActionUtil = registerActionUtil(
 	class AlignActionUtil extends AgentActionUtil<AlignAction> {
@@ -27,6 +28,10 @@ export const AlignActionUtil = registerActionUtil(
 				min: 2,
 			})
 			if (!shapeIds) return null
+			if (getLayoutClusters(this.editor, shapeIds, 'align').length < 2) {
+				scheduleTargetResolutionFailure(this.agent, 'align', 'The resolved targets contain fewer than two layout clusters.')
+				return null
+			}
 			action.shapeIds = shapeIds
 			return action
 		}

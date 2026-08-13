@@ -1,6 +1,5 @@
 import { RecordsDiff, structuredClone, TLRecord } from 'tldraw'
 import { AgentAction } from '../../../shared/types/AgentAction'
-import { ActionContract } from '../../../shared/types/ActionContract'
 import { ChatHistoryItem } from '../../../shared/types/ChatHistoryItem'
 import { Streaming } from '../../../shared/types/Streaming'
 import { AgentActionUtil, getAgentActionUtilsRecordForMode } from '../../actions/AgentActionUtil'
@@ -94,7 +93,6 @@ export class AgentActionManager extends BaseAgentManager {
 	): {
 		diff: RecordsDiff<TLRecord>
 		promise: Promise<void> | null
-		contract: ActionContract | null
 	} {
 		const { editor } = this.agent
 		const util = this.getAgentActionUtil(action._type)
@@ -102,14 +100,10 @@ export class AgentActionManager extends BaseAgentManager {
 
 		let promise: Promise<void> | null = null
 		let diff: RecordsDiff<TLRecord>
-		let contract: ActionContract | null = null
 		try {
 			diff = editor.store.extractingChanges(() => {
 				promise = util.applyAction(structuredClone(action), helpers) ?? null
 			})
-			if (action.complete) {
-				contract = util.getActionContract(structuredClone(action), helpers)
-			}
 		} catch (error) {
 			// always toast the error
 			this.agent.onError(error)
@@ -120,15 +114,20 @@ export class AgentActionManager extends BaseAgentManager {
 		}
 
 		// Add the action to chat history
-		if (util.savesToHistory()) {
-			const historyItem: ChatHistoryItem = {
-				type: 'action',
-				action,
-				diff,
-				acceptance: 'pending',
-			}
+		if (util.savesToHistory()) this.recordAction(action, diff)
 
-			this.agent.chat.update((historyItems) => {
+		return { diff, promise }
+	}
+
+	recordAction(action: Streaming<AgentAction>, diff: RecordsDiff<TLRecord>) {
+		const historyItem: ChatHistoryItem = {
+			type: 'action',
+			action,
+			diff,
+			acceptance: 'pending',
+		}
+
+		this.agent.chat.update((historyItems) => {
 				// If there are no items, start off the chat history with the first item
 				if (historyItems.length === 0) return [historyItem]
 
@@ -157,9 +156,6 @@ export class AgentActionManager extends BaseAgentManager {
 					// Otherwise, just add the new item to the end of the list
 					return [...historyItems, historyItem]
 				}
-			})
-		}
-
-		return { diff, promise, contract }
+		})
 	}
 }

@@ -1,7 +1,6 @@
 import { RecordsDiff, TLRecord } from 'tldraw'
 import { buildCanvasObservation } from '../../../shared/format/buildCanvasObservation'
-import type { AgentStreamAction } from '../../../shared/types/ActionChunk'
-import type { ActionContract, ActionVerificationResult } from '../../../shared/types/ActionContract'
+import type { AgentStreamAction } from '../../../shared/types/AgentActionResponse'
 import type { AgentRequest } from '../../../shared/types/AgentRequest'
 import type {
 	AgentTrajectory,
@@ -39,15 +38,10 @@ export class AgentTrajectoryManager extends BaseAgentManager {
 			},
 			initialObservation: this.buildObservation(request, helpers),
 			actions: [],
-			chunks: [],
-			verifications: [],
 			metrics: {
 				modelCallCount: 1,
 				actionCount: 0,
-				chunkCount: 0,
 				primitiveEditCount: 0,
-				repairLoopCount: request.source === 'self' ? 1 : 0,
-				verificationFailureCount: 0,
 				latencyToFirstActionMs: null,
 				totalLatencyMs: null,
 			},
@@ -61,8 +55,7 @@ export class AgentTrajectoryManager extends BaseAgentManager {
 
 	recordAction(
 		action: AgentStreamAction,
-		diff: RecordsDiff<TLRecord>,
-		contract: ActionContract | null
+		diff: RecordsDiff<TLRecord>
 	) {
 		const trajectory = this.currentTrajectory
 		if (!trajectory || !action.complete) return
@@ -73,47 +66,11 @@ export class AgentTrajectoryManager extends BaseAgentManager {
 
 		trajectory.actions.push({
 			action: cloneJson(action),
-			chunk: action.chunk ? cloneJson(action.chunk) : undefined,
-			contract: contract ? cloneJson(contract) : null,
 			diff: summarizeDiff(diff),
 		})
 		trajectory.metrics.actionCount = trajectory.actions.length
 		trajectory.metrics.primitiveEditCount += countDiffChanges(diff)
 
-		if (action.chunk) {
-			const existing = trajectory.chunks.find((chunk) => chunk.chunkId === action.chunk?.chunkId)
-			if (existing) {
-				existing.actionCount = Math.max(existing.actionCount, action.chunk.actionCount)
-				existing.actionTypes.push(action._type)
-			} else {
-				trajectory.chunks.push({
-					chunkId: action.chunk.chunkId,
-					intent: action.chunk.intent,
-					index: action.chunk.index,
-					actionCount: action.chunk.actionCount,
-					actionTypes: [action._type],
-					postconditions: (action.chunk.postconditions ?? []).map(
-						(postcondition) => postcondition.type
-					),
-				})
-				trajectory.metrics.chunkCount = trajectory.chunks.length
-			}
-		}
-
-		this.persist()
-	}
-
-	recordVerification(scope: 'action' | 'chunk', id: string, result: ActionVerificationResult) {
-		const trajectory = this.currentTrajectory
-		if (!trajectory) return
-
-		trajectory.verifications.push({
-			scope,
-			id,
-			result: cloneJson(result),
-			timestamp: new Date().toISOString(),
-		})
-		trajectory.metrics.verificationFailureCount += result.failures.length
 		this.persist()
 	}
 

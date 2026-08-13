@@ -1,5 +1,4 @@
 import { Box, FileHelpers } from 'tldraw'
-import { isLegacyAgentMode } from '../../shared/agentVariants'
 import { ScreenshotPart } from '../../shared/schema/PromptPartDefinitions'
 import { AgentRequest } from '../../shared/types/AgentRequest'
 import { PromptPartUtil, registerPromptPartUtil } from './PromptPartUtil'
@@ -14,16 +13,11 @@ export const ScreenshotPartUtil = registerPromptPartUtil(
 			const contextBounds = request.bounds
 
 			const contextBoundsBox = Box.From(contextBounds)
-			const useOriginalVisibilityRule = isLegacyAgentMode(
-				this.agent.mode.getCurrentModeType()
-			)
 
 			const shapes = editor.getCurrentPageShapesSorted().filter((shape) => {
 				const bounds = editor.getShapeMaskedPageBounds(shape)
 				if (!bounds) return false
-				return useOriginalVisibilityRule
-					? contextBoundsBox.includes(bounds)
-					: Box.Collides(contextBoundsBox, bounds)
+				return contextBoundsBox.includes(bounds)
 			})
 
 			if (shapes.length === 0) {

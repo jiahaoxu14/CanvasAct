@@ -3,12 +3,15 @@ import { createGoogleGenerativeAI, GoogleGenerativeAIProvider } from '@ai-sdk/go
 import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
 import { LanguageModel, ModelMessage, streamText } from 'ai'
 import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../../shared/models'
-import { isLegacyAgentMode } from '../../shared/agentVariants'
 import { DebugPart } from '../../shared/schema/PromptPartDefinitions'
 import { AgentAction } from '../../shared/types/AgentAction'
-import type { AgentActionResponse, AgentStreamAction } from '../../shared/types/ActionChunk'
+import type {
+	AgentActionResponse,
+	AgentStreamAction,
+} from '../../shared/types/AgentActionResponse'
 import { AgentPrompt } from '../../shared/types/AgentPrompt'
 import { Environment } from '../environment'
+import { getErrorMessage } from '../getErrorMessage'
 import { buildMessages } from '../prompt/buildMessages'
 import { buildSystemPrompt } from '../prompt/buildSystemPrompt'
 import { getModelName } from '../prompt/getModelName'
@@ -20,9 +23,11 @@ export class AgentService {
 	google: GoogleGenerativeAIProvider
 
 	constructor(env: Environment) {
-		this.openai = createOpenAI({ apiKey: env.OPENAI_API_KEY })
-		this.anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY })
-		this.google = createGoogleGenerativeAI({ apiKey: env.GOOGLE_API_KEY })
+		// Values in `.dev.vars` are user-edited and can easily pick up whitespace
+		// around a pasted key. Provider authorization headers require the exact key.
+		this.openai = createOpenAI({ apiKey: env.OPENAI_API_KEY?.trim() })
+		this.anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY?.trim() })
+		this.google = createGoogleGenerativeAI({ apiKey: env.GOOGLE_API_KEY?.trim() })
 	}
 
 	getModel(modelName: AgentModelName): LanguageModel {
@@ -37,7 +42,7 @@ export class AgentService {
 				yield event
 			}
 		} catch (error: any) {
-			console.error('Stream error:', error)
+			console.error('[AGENT SERVICE FAILED]', getErrorMessage(error))
 			throw error
 		}
 	}
@@ -57,10 +62,11 @@ export class AgentService {
 
 		const modelDefinition = getAgentModelDefinition(modelId)
 		const systemPrompt = buildSystemPrompt(prompt)
-		const useOriginalAgent = isLegacyAgentMode(prompt.mode?.modeType ?? '')
-		const responseStart = useOriginalAgent
-			? '{"actions": [{"_type":'
-			: '{"chunks": [{"intent":'
+		const mode = prompt.mode
+		if (!mode) {
+			throw new Error('A mode part is required to validate the agent response')
+		}
+		const responseStart = '{"actions": [{"_type":'
 
 		// Build messages with provider-specific options
 		const messages: ModelMessage[] = []
@@ -133,8 +139,8 @@ export class AgentService {
 					console.warn('Stream actions aborted')
 				},
 				onError: (e) => {
-					console.error('Stream text error:', e)
-					throw e
+					const cause = e && typeof e === 'object' && 'error' in e ? e.error : e
+					throw cause
 				},
 			})
 
@@ -147,7 +153,6 @@ export class AgentService {
 			let startTime = Date.now()
 			for await (const text of textStream) {
 				buffer += text
-
 				const partialObject = closeAndParseJson(buffer) as AgentActionResponse | null
 				if (!partialObject) continue
 
@@ -161,7 +166,6 @@ export class AgentService {
 					if (entry) {
 						yield {
 							...entry.action,
-							chunk: entry.chunk,
 							complete: true,
 							time: Date.now() - startTime,
 						}
@@ -184,26 +188,21 @@ export class AgentService {
 					// Yield the potentially incomplete event
 					yield {
 						...entry.action,
-						chunk: entry.chunk,
 						complete: false,
 						time: Date.now() - startTime,
 					}
 				}
 			}
 
-			// If we've finished receiving events, but there's still an incomplete event, we need to complete it
+			// Preserve the original agent's incremental best-effort streaming behavior.
 			if (maybeIncompleteAction) {
 				yield {
 					...maybeIncompleteAction.action,
-					chunk: maybeIncompleteAction.chunk
-						? { ...maybeIncompleteAction.chunk, complete: true }
-						: undefined,
 					complete: true,
 					time: Date.now() - startTime,
 				}
 			}
 		} catch (error: any) {
-			console.error('streamActions error:', error)
 			throw error
 		}
 	}
@@ -211,30 +210,9 @@ export class AgentService {
 
 interface StreamActionEntry {
 	action: AgentAction
-	chunk?: AgentStreamAction['chunk']
 }
 
 function getStreamActionEntries(response: AgentActionResponse): StreamActionEntry[] {
-	if (Array.isArray(response.chunks) && response.chunks.length > 0) {
-		return response.chunks.flatMap((chunk, chunkIndex) => {
-			const actions = Array.isArray(chunk.actions) ? chunk.actions : []
-			const chunkId = chunk.chunkId ?? `chunk-${chunkIndex + 1}`
-			const isKnownComplete = chunkIndex < response.chunks!.length - 1
-			return actions.map((action, actionIndex) => ({
-				action,
-				chunk: {
-					chunkId,
-					intent: chunk.intent,
-					index: chunkIndex,
-					actionIndex,
-					actionCount: actions.length,
-					complete: isKnownComplete && actionIndex === actions.length - 1,
-					postconditions: chunk.postconditions,
-				},
-			}))
-		})
-	}
-
 	if (Array.isArray(response.actions)) {
 		return response.actions.map((action) => ({ action }))
 	}

@@ -12,11 +12,17 @@ export function ChatHistoryGroupWithDiff({ group }: { group: ChatHistoryGroup })
 	const { items } = group
 	const { editor } = agent
 	const diff = useMemo(() => squashRecordDiffs(items.map((item) => item.diff)), [items])
+	const acceptance = useMemo<ChatHistoryActionItem['acceptance']>(() => {
+		if (items.length === 0) return 'pending'
+		const first = items[0].acceptance
+		return items.every((item) => item.acceptance === first) ? first : 'pending'
+	}, [items])
 
 	// Accept all changes from this group
 	const handleAccept = useCallback(() => {
 		agent.chat.update((currentChatHistoryItems) => {
 			const newItems = [...currentChatHistoryItems]
+			if (acceptance === 'rejected') editor.store.applyDiff(diff)
 			for (const item of items) {
 				const index = newItems.findIndex((v) => v === item)
 
@@ -25,19 +31,16 @@ export function ChatHistoryGroupWithDiff({ group }: { group: ChatHistoryGroup })
 					newItems[index] = { ...item, acceptance: 'accepted' }
 				}
 
-				// Apply the diff if needed
-				if (item.acceptance === 'rejected') {
-					editor.store.applyDiff(item.diff)
-				}
 			}
 			return newItems
 		})
-	}, [items, editor, agent.chat])
+	}, [items, editor, agent.chat, acceptance, diff])
 
 	// Reject all changes from this group
 	const handleReject = useCallback(() => {
 		agent.chat.update((currentChatHistoryItems) => {
 			const newItems = [...currentChatHistoryItems]
+			if (acceptance !== 'rejected') editor.store.applyDiff(reverseRecordsDiff(diff))
 			for (const item of items) {
 				const index = newItems.findIndex((v) => v === item)
 
@@ -46,30 +49,10 @@ export function ChatHistoryGroupWithDiff({ group }: { group: ChatHistoryGroup })
 					newItems[index] = { ...item, acceptance: 'rejected' }
 				}
 
-				// Reverse the diff if needed
-				if (item.acceptance !== 'rejected') {
-					const reverseDiff = reverseRecordsDiff(item.diff)
-					editor.store.applyDiff(reverseDiff)
-				}
 			}
 			return newItems
 		})
-	}, [items, editor, agent.chat])
-
-	// Get the acceptance status of the group
-	// If all items are accepted, the group is accepted
-	// If all items are rejected, the group is rejected
-	// Otherwise, the group is pending
-	const acceptance = useMemo<ChatHistoryActionItem['acceptance']>(() => {
-		if (items.length === 0) return 'pending'
-		const acceptance = items[0].acceptance
-		for (let i = 1; i < items.length; i++) {
-			if (items[i].acceptance !== acceptance) {
-				return 'pending'
-			}
-		}
-		return acceptance
-	}, [items])
+	}, [items, editor, agent.chat, acceptance, diff])
 
 	const steps = useMemo(
 		() => items.map((item) => getActionInfo(item.action, agent)),

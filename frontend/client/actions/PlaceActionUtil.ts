@@ -1,6 +1,5 @@
 import { TLShapeId } from 'tldraw'
 import { PlaceAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
@@ -184,30 +183,6 @@ export const PlaceActionUtil = registerActionUtil(
 					x: bbR.maxX + sideOffset,
 					y: bbR.maxY - bbA.height - alignOffset,
 				})
-			}
-		}
-
-		override getActionContract(action: Streaming<PlaceAction>): ActionContract | null {
-			if (!action.complete || !action.shapeId || !action.referenceShapeId) return null
-			return {
-				actionType: 'place',
-				intent: action.intent,
-				modifiedShapeIds: [action.shapeId],
-				postconditions:
-					action.side === 'inside'
-						? [
-								{
-									type: 'objects-inside-containers',
-									pairs: [
-										{
-											objectId: action.shapeId,
-											containerId: action.referenceShapeId,
-											padding: Math.max(0, action.padding ?? 16),
-										},
-									],
-								},
-							]
-						: [],
 			}
 		}
 	}

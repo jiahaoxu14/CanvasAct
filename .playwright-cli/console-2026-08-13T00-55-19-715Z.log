@@ -1,0 +1,24 @@
+[     827ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5177/node_modules/.vite/deps/chunk-2CQ6Q4OT.js?v=7bbb84a1:20356
+[  182577ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts:470
+[  182577ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts:470
+[  182581ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts:470
+[  314231ms] [ERROR] [vite] Error: Agent action util already registered: annotateGroup
+    at registerActionUtil (http://127.0.0.1:5177/client/actions/AgentActionUtil.ts:41:19)
+    at http://127.0.0.1:5177/client/actions/AnnotateGroupActionUtil.ts?t=1786582833608:18:40 @ http://127.0.0.1:5177/@vite/client:808
+[  314232ms] [ERROR] [vite] Failed to reload /client/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5177/@vite/client:808
+[  314232ms] [ERROR] [vite] Error: Agent action util already registered: annotateGroup
+    at registerActionUtil (http://127.0.0.1:5177/client/actions/AgentActionUtil.ts:41:19)
+    at http://127.0.0.1:5177/client/actions/AnnotateGroupActionUtil.ts?t=1786582833608:18:40 @ http://127.0.0.1:5177/@vite/client:808
+[  314232ms] [ERROR] [vite] Failed to reload /client/agent/TldrawAgentAppProvider.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5177/@vite/client:808
+[  314234ms] [ERROR] [vite] Error: Agent action util already registered: annotateGroup
+    at registerActionUtil (http://127.0.0.1:5177/client/actions/AgentActionUtil.ts:41:19)
+    at http://127.0.0.1:5177/client/actions/AnnotateGroupActionUtil.ts?t=1786582833608:18:40 @ http://127.0.0.1:5177/@vite/client:808
+[  314234ms] [ERROR] [vite] Failed to reload /client/agent/TldrawAgentAppProvider.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5177/@vite/client:808
+[  314236ms] [ERROR] [vite] Error: Agent action util already registered: annotateGroup
+    at registerActionUtil (http://127.0.0.1:5177/client/actions/AgentActionUtil.ts:41:19)
+    at http://127.0.0.1:5177/client/actions/AnnotateGroupActionUtil.ts?t=1786582833608:18:40 @ http://127.0.0.1:5177/@vite/client:808
+[  314236ms] [ERROR] [vite] Failed to reload /client/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5177/@vite/client:808
+[  352362ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5177/node_modules/.vite/deps/chunk-2CQ6Q4OT.js?v=7bbb84a1:20356
+[  436179ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts?t=1786582833610:470
+[  436179ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts?t=1786582833610:470
+[  436179ms] [WARNING] [ACTION ROUTING] Skipped unavailable action "unknown". Allowed actions: organizeBoard @ http://127.0.0.1:5177/client/agent/TldrawAgent.ts?t=1786582833610:470

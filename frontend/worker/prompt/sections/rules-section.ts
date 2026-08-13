@@ -60,7 +60,6 @@ Refer to the JSON schema for the full list of available events, their properties
 2. **Do not generate extra fields or omit required fields.**
 3. **Use meaningful \`intent\` descriptions for all actions.**
 ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent across related events.**')}
-${flagged(flags.canEdit && flags.usesActionChunks, '5. **Prefer `chunks` over top-level `actions` for multi-step edits. Keep each chunk focused enough that its result can be verified before the next chunk.**')}
 
 ## Useful notes
 
@@ -185,51 +184,6 @@ ${flagged(
 	(flags.hasDistribute || flags.hasStack || flags.hasAlign || flags.hasPlace) &&
 		(flags.hasCreate || flags.hasUpdate || flags.hasMove),
 	`- Carefully plan which action types to use. For example, the higher level events like ${[flags.hasDistribute && '`distribute`', flags.hasStack && '`stack`', flags.hasAlign && '`align`', flags.hasPlace && '`place`'].filter(Boolean).join(', ')} can at times be better than the lower level events like ${[flags.hasCreate && '`create`', flags.hasUpdate && '`update`', flags.hasMove && '`move`'].filter(Boolean).join(', ')} because they're more efficient and more accurate. If lower level control is needed, the lower level events are better because they give more precise and customizable control.`
-)}
-${flagged(
-	flags.hasArrange ||
-		flags.hasBuildFlow ||
-		flags.hasFitText ||
-		flags.hasConnect ||
-		flags.hasCleanupLayout ||
-		flags.hasAnnotateGroup,
-	`- Prefer semantic edit actions for common multi-step canvas tasks:
-	- Use \`arrange\` for rows, columns, grids, flows, radial layouts, and stacks instead of emitting many \`move\` actions.
-	- Use \`buildFlow\` when the user specifies an ordered workflow. Pass the step ids in the requested order; in that one action, local code fits the flow inside the active workspace, creates exactly one canonical bound arrow between adjacent steps, and removes stale, duplicate, contradictory, or noncanonical connectors among those steps. Do not emit separate move, delete, or connect actions for the same flow.
-	- Use \`fitText\` when labels or text overflow, need wrapping, need shortening, or need to be moved back into their containers.
-	- Use \`connect\` to create bound arrows between shapes. It resolves endpoints locally and avoids duplicate arrows by default.
-	- Use \`cleanupLayout\` when shapes overlap or spacing needs repair.
-	- Use \`annotateGroup\` for headings, callouts, or notes that describe a resolved group.
-- Semantic edit actions support local postcondition checks. If a verification failure is surfaced in a follow-up request, use the fresh \`CanvasObservation\` to repair it before finishing.`
-)}
-${flagged(
-	flags.hasCanvasObservationPart &&
-		(flags.hasAlign ||
-			flags.hasDistribute ||
-			flags.hasStack ||
-			flags.hasArrange ||
-			flags.hasBuildFlow ||
-			flags.hasFitText ||
-			flags.hasConnect ||
-			flags.hasCleanupLayout ||
-			flags.hasAnnotateGroup ||
-			flags.hasBringToFront ||
-			flags.hasSendToBack ||
-			flags.hasRotate ||
-			flags.hasResize ||
-			flags.hasMove),
-	`- For actions that support \`targetSelector\`, prefer selectors over manually listing ids when the user refers to "this", "these", "here", selected shapes, context shapes, labels, nearby objects, connected objects, or spatial tiles.
-- For "this" and "these", use \`{"_type":"selected"}\` when the user has selected shapes; use \`{"_type":"context"}\` when the user supplied target/context shapes or an area.
-- Use selector types such as \`labels-of-selected\`, \`arrows-connected-to-selected\`, \`connected-to\`, \`tile\`, \`nearest\`, \`inside-region\`, \`intersecting-region\`, \`text\`, and \`type\` to express target intent. Local code resolves them against the current canvas.
-- If a selector should resolve exactly one shape, set \`expect:"one"\`. Ambiguous selectors fail safely and trigger a follow-up instead of editing the wrong object, so do not guess ids when the observation is ambiguous.`
-)}
-${flagged(
-	flags.hasCanvasObservationPart && flags.canEdit && flags.hasMessage,
-	`- Ambiguous target safety:
-	- Treat ambiguity as a blocker, not a tie-breaker. If the user names a target by non-unique text, note, type, color, or location and multiple objects plausibly match, do not pick one id.
-	- If the action supports \`targetSelector\`, express the user's target as a selector with \`expect:"one"\`, for example \`{"_type":"text","text":"Revenue","match":"exact","searchNotes":true,"expect":"one"}\`. Local resolution will safe-fail instead of editing the wrong object.
-	- If no safe selector applies, or if the user really must choose between multiple matching objects, return a \`message\` asking the user to clarify. Do not also edit in the same response.
-	- Only hard-code \`shapeId\` or \`shapeIds\` when selection, context, a spatial qualifier, or a unique label makes the target unambiguous.`
 )}
 ${flagged(
 	flags.hasSelectedShapesPart,

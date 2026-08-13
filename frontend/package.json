@@ -9,7 +9,8 @@
 		"dev": "vite",
 		"eval:canvas-agent": "esbuild scripts/run-canvas-agent-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-canvas-agent-evals.mjs && node .tsbuild/run-canvas-agent-evals.mjs",
 		"eval:model-in-loop": "esbuild scripts/run-model-in-loop-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-model-in-loop-evals.mjs && node .tsbuild/run-model-in-loop-evals.mjs",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"test:lifecycle-regressions": "esbuild tests/agent-lifecycle-regressions.ts --bundle --platform=node --format=esm --outfile=.tsbuild/agent-lifecycle-regressions.mjs && node .tsbuild/agent-lifecycle-regressions.mjs"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^2.0.2",

@@ -3,7 +3,8 @@ import { DistributeAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
-import { resolveTargetSelectorForAction } from './resolveTargets'
+import { getLayoutClusters } from './getLayoutClusters'
+import { resolveTargetSelectorForAction, scheduleTargetResolutionFailure } from './resolveTargets'
 
 export const DistributeActionUtil = registerActionUtil(
 	class DistributeActionUtil extends AgentActionUtil<DistributeAction> {
@@ -24,9 +25,13 @@ export const DistributeActionUtil = registerActionUtil(
 				selector: action.targetSelector,
 				shapeIds: action.shapeIds,
 				actionType: 'distribute',
-				min: 2,
+				min: 3,
 			})
 			if (!shapeIds) return null
+			if (getLayoutClusters(this.editor, shapeIds, 'distribute').length < 3) {
+				scheduleTargetResolutionFailure(this.agent, 'distribute', 'The resolved targets contain fewer than three layout clusters.')
+				return null
+			}
 			action.shapeIds = shapeIds
 			return action
 		}

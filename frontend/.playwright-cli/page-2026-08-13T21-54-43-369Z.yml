@@ -1,0 +1,159 @@
+- generic [ref=e1]:
+  - application "tldraw" [ref=e3]:
+    - generic [ref=e380]:
+      - paragraph [ref=e383]: LAB REVIEW · FRI 10:00
+      - generic [ref=e385]:
+        - paragraph [ref=e386]: DESIGN DIRECTION
+        - paragraph [ref=e387]: Maintain a workspace-wide spatial index and reason beyond the current viewport.
+      - generic [ref=e389]:
+        - paragraph [ref=e390]: PRIOR WORK · Cockburn et al., 2009
+        - paragraph [ref=e391]: Overview + detail views help people retain context in large information spaces.
+      - generic [ref=e393]:
+        - paragraph [ref=e394]: INTERVIEW · P07
+        - paragraph [ref=e395]: “I lost the note once it left my screen.” P07 repeatedly zoomed out to rebuild context.
+      - generic [ref=e397]:
+        - paragraph [ref=e398]: PROJECT BRIEF
+        - paragraph [ref=e399]: "Research question: How can an LLM reorganize a complex 2D workspace without losing spatial meaning?"
+        - paragraph [ref=e400]: "Study materials: 12 interviews · 6 think-aloud sessions · literature notes"
+      - generic [ref=e402]:
+        - paragraph [ref=e403]: DESIGN DIRECTION
+        - paragraph [ref=e404]: Apply organization as one semantic transaction that preserves bindings and containment.
+      - generic [ref=e406]:
+        - paragraph [ref=e407]: PRIOR WORK · Shneiderman, 1983
+        - paragraph [ref=e408]: Direct manipulation depends on visible objects and rapid, reversible actions.
+      - generic [ref=e410]:
+        - paragraph [ref=e411]: PILOT SESSION · P03
+        - paragraph [ref=e412]: The cleanup looked better, but one moved connector changed the workflow meaning.
+      - generic [ref=e414]:
+        - paragraph [ref=e415]: THEME 01 / NAVIGATION & CONTEXT
+        - paragraph [ref=e416]: Keep people oriented across a workspace larger than the viewport
+      - generic [ref=e418]:
+        - paragraph [ref=e419]: THEME 02 / SEMANTIC MANIPULATION
+        - paragraph [ref=e420]: Change layout without breaking the meaning carried by structure
+      - generic [ref=e422]:
+        - paragraph [ref=e423]: THEME 03 / TRUST & VERIFICATION
+        - paragraph [ref=e424]: Make completion and unresolved problems visible to the researcher
+      - generic [ref=e426]:
+        - paragraph [ref=e427]: DESIGN DIRECTION
+        - paragraph [ref=e428]: Check containment, overlap, text fit, and bindings before reporting success.
+      - generic [ref=e430]:
+        - paragraph [ref=e431]: PRIOR WORK · Amershi et al., 2019
+        - paragraph [ref=e432]: AI systems should communicate what happened and support efficient correction.
+      - generic [ref=e434]:
+        - paragraph [ref=e435]: INTERVIEW · P11
+        - paragraph [ref=e436]: “I ran organize twice because I could not tell whether it had finished correctly.”
+      - paragraph [ref=e440]: RESEARCH PROJECT / WORKING SYNTHESIS
+      - generic [ref=e442]:
+        - paragraph [ref=e443]: WORKING CONVENTION
+        - paragraph [ref=e444]: Blue = prior work · Yellow = study evidence
+        - paragraph [ref=e445]: "Violet = design direction · Reading chain: prior work → evidence → design direction"
+      - paragraph [ref=e449]: How should AI organize large visual workspaces?
+    - generic:
+      - button "Move focus to canvas" [ref=e450] [cursor=pointer]
+      - generic:
+        - generic:
+          - navigation:
+            - generic:
+              - button "Menu" [ref=e451] [cursor=pointer]
+              - button "Case Study · Research Project Workspace" [ref=e453] [cursor=pointer]
+              - toolbar "Actions":
+                - button "Undo — ⌘ Z" [disabled] [ref=e456]
+                - button "Redo — ⌘ ⇧ Z" [disabled] [ref=e458]
+                - button "Delete — ⌫" [disabled] [ref=e460]
+                - button "Duplicate — ⌘ D" [disabled] [ref=e462]
+                - button "Actions" [ref=e464] [cursor=pointer]
+          - button "Restore the original case study" [ref=e466] [cursor=pointer]:
+            - generic [ref=e467]: Reset scenario
+        - generic [ref=e468]:
+          - generic [ref=e469]:
+            - toolbar "Color" [ref=e470]:
+              - radiogroup [ref=e471]:
+                - radio "Color — Black (selected)" [checked] [ref=e472] [cursor=pointer]
+                - radio "Color — Grey" [ref=e474] [cursor=pointer]
+                - radio "Color — Light violet" [ref=e476] [cursor=pointer]
+                - radio "Color — Violet" [ref=e478] [cursor=pointer]
+                - radio "Color — Blue" [ref=e480] [cursor=pointer]
+                - radio "Color — Light blue" [ref=e482] [cursor=pointer]
+                - radio "Color — Yellow" [ref=e484] [cursor=pointer]
+                - radio "Color — Orange" [ref=e486] [cursor=pointer]
+                - radio "Color — Green" [ref=e488] [cursor=pointer]
+                - radio "Color — Light green" [ref=e490] [cursor=pointer]
+                - radio "Color — Light red" [ref=e492] [cursor=pointer]
+                - radio "Color — Red" [ref=e494] [cursor=pointer]
+            - generic [ref=e497]:
+              - generic [ref=e498] [cursor=pointer]
+              - slider "Opacity — 100%" [ref=e501]
+          - generic [ref=e502]:
+            - toolbar "Fill" [ref=e503]:
+              - radiogroup [ref=e504]:
+                - radio "Fill — None (selected)" [checked] [ref=e505] [cursor=pointer]
+                - radio "Fill — Semi" [ref=e507] [cursor=pointer]
+                - radio "Fill — Solid" [ref=e509] [cursor=pointer]
+              - button "Fill — None" [ref=e512] [cursor=pointer]
+            - toolbar "Dash" [ref=e514]:
+              - radiogroup [ref=e515]:
+                - radio "Dash — Draw (selected)" [checked] [ref=e516] [cursor=pointer]
+                - radio "Dash — Dashed" [ref=e518] [cursor=pointer]
+                - radio "Dash — Dotted" [ref=e520] [cursor=pointer]
+                - radio "Dash — Solid" [ref=e522] [cursor=pointer]
+            - toolbar "Size" [ref=e524]:
+              - radiogroup [ref=e525]:
+                - radio "Size — Small (selected)" [checked] [ref=e526] [cursor=pointer]
+                - radio "Size — Medium" [ref=e528] [cursor=pointer]
+                - radio "Size — Large" [ref=e530] [cursor=pointer]
+                - radio "Size — Extra large" [ref=e532] [cursor=pointer]
+      - generic:
+        - generic:
+          - toolbar "Navigation" [ref=e535]:
+            - button "Zoom — 53%" [ref=e536] [cursor=pointer]:
+              - generic [ref=e537]: 53%
+            - button "Toggle minimap" [ref=e538] [cursor=pointer]
+          - toolbar "Tools" [ref=e540]:
+            - generic [ref=e541]:
+              - button "Select — V" [pressed] [ref=e542] [cursor=pointer]
+              - button "Hand — H" [ref=e544] [cursor=pointer]
+              - button "Draw — D" [ref=e546] [cursor=pointer]
+              - button "Eraser — E" [ref=e548] [cursor=pointer]
+              - button "Arrow — A" [ref=e550] [cursor=pointer]
+              - button "Text — T" [ref=e552] [cursor=pointer]
+              - button "Note — N" [ref=e554] [cursor=pointer]
+              - button "Media — ⌘ U" [ref=e556] [cursor=pointer]
+              - button "Rectangle — R" [ref=e558] [cursor=pointer]
+            - button "More" [ref=e561] [cursor=pointer]
+      - region "Notifications (F8)":
+        - list
+    - button "Get a license for production" [ref=e564] [cursor=pointer]
+  - generic [ref=e565]:
+    - generic [ref=e566]:
+      - generic [ref=e567]:
+        - generic [ref=e568]: Agent
+        - group "Agent implementation" [ref=e569]:
+          - button "CanvasAct selected. Switching starts a fresh chat and keeps the canvas." [pressed] [ref=e570] [cursor=pointer]: CanvasAct
+          - button "Switch to Original tldraw. Switching starts a fresh chat and keeps the canvas." [ref=e571] [cursor=pointer]: Original
+      - button "Start a new chat" [active] [ref=e572] [cursor=pointer]: +
+    - generic [ref=e678]:
+      - region "Case study prompt" [ref=e679]:
+        - generic [ref=e680]:
+          - generic [ref=e681]: Case study prompt
+          - button "Copy" [ref=e682] [cursor=pointer]
+        - paragraph [ref=e683]: Organize this research workspace by theme.
+        - button "Use prompt" [ref=e684] [cursor=pointer]
+      - generic [ref=e686]:
+        - generic [ref=e688]:
+          - generic [ref=e689]: Add Context
+          - combobox [ref=e693] [cursor=pointer]:
+            - option "Pick Shapes"
+            - option "Pick Area"
+            - option [selected]
+        - textbox "Ask, learn, brainstorm, draw" [ref=e694]
+        - generic [ref=e695]:
+          - generic [ref=e697]:
+            - generic [ref=e698]: gpt-5.4
+            - combobox [ref=e707]:
+              - option "claude-sonnet-4-5"
+              - option "claude-opus-4-5"
+              - option "gemini-3-pro-preview"
+              - option "gemini-3-flash-preview"
+              - option "gpt-5.4" [selected]
+              - option "gpt-5.4-mini"
+          - button "⬆" [disabled] [ref=e710]

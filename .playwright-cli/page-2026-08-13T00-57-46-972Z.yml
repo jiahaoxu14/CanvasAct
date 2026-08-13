@@ -1,0 +1,175 @@
+- generic [ref=e1]:
+  - application "tldraw" [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e9]:
+        - paragraph [ref=e10]: ANALYST ANNOTATION
+        - paragraph [ref=e11]: Do not collapse competing hypotheses before the vendor bridge confirms scope.
+      - generic [ref=e13]:
+        - paragraph [ref=e14]: 07:31 · API latency spike
+        - paragraph [ref=e15]: ARCHIVED · synthetic canary test
+      - generic [ref=e17]:
+        - paragraph [ref=e18]: 07:36 · API latency spike
+        - paragraph [ref=e19]: ARCHIVED · resolved cache warm-up
+      - paragraph [ref=e23]: ARCHIVED EVIDENCE / DO NOT MODIFY
+      - generic [ref=e25]:
+        - paragraph [ref=e26]: 06:48 · Policy alert
+        - paragraph [ref=e27]: ARCHIVED · staging environment only
+      - paragraph [ref=e30]: 09:00 BRIEFING · ACTIVE
+      - generic [ref=e32]:
+        - paragraph [ref=e33]: 08:07 · API latency spike
+        - paragraph [ref=e34]: Admin endpoints slow only for sessions carrying the newly issued token family.
+      - generic [ref=e36]:
+        - paragraph [ref=e37]: 08:11 · API latency spike
+        - paragraph [ref=e38]: Dependency spans add 1.8 s before timeout while internal service time stays flat.
+      - generic [ref=e40]:
+        - paragraph [ref=e41]: 08:13 · Replica mismatch
+        - paragraph [ref=e42]: Two replicas advertise an obsolete allowlist hash; the remaining six are current.
+      - generic [ref=e44]:
+        - paragraph [ref=e45]: 07:54 · Policy bundle deployed
+        - paragraph [ref=e46]: A routing-policy bundle reaches production four minutes before the first alert.
+      - generic [ref=e48]:
+        - paragraph [ref=e49]: 08:19 · Privilege-reset calls
+        - paragraph [ref=e50]: Three callers report password resets they did not initiate; all share the same tenant.
+      - generic [ref=e52]:
+        - paragraph [ref=e53]: 07:58 · Token refresh anomaly
+        - paragraph [ref=e54]: 43 impossible-travel logins begin within two minutes of a refresh-token burst.
+      - generic [ref=e56]:
+        - paragraph [ref=e57]: 08:28 · Restart clears one cluster
+        - paragraph [ref=e58]: Config reload restores traffic in cluster C, but vendor errors persist elsewhere.
+      - generic [ref=e60]:
+        - paragraph [ref=e61]: 08:02 · Regional error bulletin
+        - paragraph [ref=e62]: Status feed reports elevated 502s in us-east, matching the first customer failures.
+      - generic [ref=e64]:
+        - paragraph [ref=e65]: 08:23 · Failover acknowledged
+        - paragraph [ref=e66]: Provider begins traffic shift; our external errors fall before any internal change.
+      - generic [ref=e68]:
+        - paragraph [ref=e69]: H1 / CREDENTIAL COMPROMISE
+        - paragraph [ref=e70]: 9 active clues · confidence under review
+      - generic [ref=e72]:
+        - paragraph [ref=e73]: H2 / THIRD-PARTY OUTAGE
+        - paragraph [ref=e74]: 6 active clues · provider correlation
+      - generic [ref=e76]:
+        - paragraph [ref=e77]: H3 / CONFIGURATION DRIFT
+        - paragraph [ref=e78]: 5 active clues · deployment correlation
+      - paragraph [ref=e81]: ANALYST NOTES · 8 entries
+      - paragraph [ref=e84]: APM TRACES · 24 spans
+      - paragraph [ref=e87]: IAM LOGS · 317 events
+      - paragraph [ref=e91]: PROVENANCE SOURCES
+      - paragraph [ref=e94]: VENDOR STATUS · 3 posts
+      - generic [ref=e96]:
+        - paragraph [ref=e97]: FINISH CHECK
+        - paragraph [ref=e98]: □ 9 active cards contained
+        - paragraph [ref=e99]: □ chronological in each lane
+        - paragraph [ref=e100]: □ 18 links preserved
+        - paragraph [ref=e101]: □ protected region unchanged
+      - paragraph [ref=e105]: INCIDENT ANALYSIS CELL / 08:42
+      - paragraph [ref=e109]: Evidence synthesis / Morning briefing
+    - generic:
+      - button "Move focus to canvas" [ref=e110] [cursor=pointer]
+      - generic:
+        - generic:
+          - navigation:
+            - generic:
+              - button "Menu" [ref=e111] [cursor=pointer]
+              - button "Case Study · Evidence Briefing Board" [ref=e113] [cursor=pointer]
+              - toolbar "Actions":
+                - button "Undo — ⌘ Z" [ref=e116] [cursor=pointer]
+                - button "Redo — ⌘ ⇧ Z" [disabled] [ref=e118]
+                - button "Delete — ⌫" [disabled] [ref=e120]
+                - button "Duplicate — ⌘ D" [disabled] [ref=e122]
+                - button "Actions" [ref=e124] [cursor=pointer]
+          - button "Restore the original case study" [ref=e126] [cursor=pointer]:
+            - generic [ref=e127]: Reset scenario
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - toolbar "Color" [ref=e130]:
+              - radiogroup [ref=e131]:
+                - radio "Color — Black (selected)" [checked] [ref=e132] [cursor=pointer]
+                - radio "Color — Grey" [ref=e134] [cursor=pointer]
+                - radio "Color — Light violet" [ref=e136] [cursor=pointer]
+                - radio "Color — Violet" [ref=e138] [cursor=pointer]
+                - radio "Color — Blue" [ref=e140] [cursor=pointer]
+                - radio "Color — Light blue" [ref=e142] [cursor=pointer]
+                - radio "Color — Yellow" [ref=e144] [cursor=pointer]
+                - radio "Color — Orange" [ref=e146] [cursor=pointer]
+                - radio "Color — Green" [ref=e148] [cursor=pointer]
+                - radio "Color — Light green" [ref=e150] [cursor=pointer]
+                - radio "Color — Light red" [ref=e152] [cursor=pointer]
+                - radio "Color — Red" [ref=e154] [cursor=pointer]
+            - generic [ref=e157]:
+              - generic [ref=e158] [cursor=pointer]
+              - slider "Opacity — 100%" [ref=e161]
+          - generic [ref=e162]:
+            - toolbar "Fill" [ref=e163]:
+              - radiogroup [ref=e164]:
+                - radio "Fill — None (selected)" [checked] [ref=e165] [cursor=pointer]
+                - radio "Fill — Semi" [ref=e167] [cursor=pointer]
+                - radio "Fill — Solid" [ref=e169] [cursor=pointer]
+              - button "Fill — None" [ref=e172] [cursor=pointer]
+            - toolbar "Dash" [ref=e174]:
+              - radiogroup [ref=e175]:
+                - radio "Dash — Draw (selected)" [checked] [ref=e176] [cursor=pointer]
+                - radio "Dash — Dashed" [ref=e178] [cursor=pointer]
+                - radio "Dash — Dotted" [ref=e180] [cursor=pointer]
+                - radio "Dash — Solid" [ref=e182] [cursor=pointer]
+            - toolbar "Size" [ref=e184]:
+              - radiogroup [ref=e185]:
+                - radio "Size — Small (selected)" [checked] [ref=e186] [cursor=pointer]
+                - radio "Size — Medium" [ref=e188] [cursor=pointer]
+                - radio "Size — Large" [ref=e190] [cursor=pointer]
+                - radio "Size — Extra large" [ref=e192] [cursor=pointer]
+      - generic:
+        - generic:
+          - toolbar "Navigation" [ref=e195]:
+            - button "Zoom — 57%" [ref=e196] [cursor=pointer]:
+              - generic [ref=e197]: 57%
+            - button "Toggle minimap" [ref=e198] [cursor=pointer]
+          - toolbar "Tools" [ref=e200]:
+            - generic [ref=e201]:
+              - button "Select — V" [pressed] [ref=e202] [cursor=pointer]
+              - button "Hand — H" [ref=e204] [cursor=pointer]
+              - button "Draw — D" [ref=e206] [cursor=pointer]
+              - button "Eraser — E" [ref=e208] [cursor=pointer]
+              - button "Arrow — A" [ref=e210] [cursor=pointer]
+              - button "Text — T" [ref=e212] [cursor=pointer]
+              - button "Note — N" [ref=e214] [cursor=pointer]
+              - button "Media — ⌘ U" [ref=e216] [cursor=pointer]
+              - button "Rectangle — R" [ref=e218] [cursor=pointer]
+            - button "More" [ref=e221] [cursor=pointer]
+      - region "Notifications (F8)":
+        - list
+    - button "Get a license for production" [ref=e224] [cursor=pointer]
+  - generic [ref=e225]:
+    - generic [ref=e226]:
+      - generic [ref=e227]:
+        - generic [ref=e228]: Agent
+        - group "Agent implementation" [ref=e229]:
+          - button "CanvasAct selected. Switching starts a fresh chat and keeps the canvas." [pressed] [ref=e230] [cursor=pointer]: CanvasAct
+          - button "Switch to Original tldraw. Switching starts a fresh chat and keeps the canvas." [ref=e231] [cursor=pointer]: Original
+      - button "Start a new chat" [ref=e232] [cursor=pointer]: +
+    - generic [ref=e234]:
+      - region "Case study prompt" [ref=e235]:
+        - generic [ref=e236]:
+          - generic [ref=e237]: Case study prompt
+          - button "Copy" [ref=e238] [cursor=pointer]
+        - paragraph [ref=e239]: Prepare the active evidence board for the 09:00 briefing. Place each active evidence card in the hypothesis lane it supports, order evidence by timestamp within each lane, make every excerpt readable, preserve all source and hypothesis links, and leave archived evidence and analyst annotations unchanged. Verify the board before finishing.
+        - button "Use prompt" [ref=e240] [cursor=pointer]
+      - generic [ref=e242]:
+        - generic [ref=e244]:
+          - generic [ref=e245]: Add Context
+          - combobox [ref=e249] [cursor=pointer]:
+            - option "Pick Shapes"
+            - option "Pick Area"
+            - option [selected]
+        - textbox "Ask, learn, brainstorm, draw" [active] [ref=e250]: Prepare the active evidence board for the 09:00 briefing. Place each active evidence card in the hypothesis lane it supports, order evidence by timestamp within each lane, make every excerpt readable, preserve all source and hypothesis links, and leave archived evidence and analyst annotations unchanged. Verify the board before finishing.
+        - generic [ref=e251]:
+          - generic [ref=e253]:
+            - generic [ref=e254]: gpt-5.4
+            - combobox [ref=e263]:
+              - option "claude-sonnet-4-5"
+              - option "claude-opus-4-5"
+              - option "gemini-3-pro-preview"
+              - option "gemini-3-flash-preview"
+              - option "gpt-5.4" [selected]
+              - option "gpt-5.4-mini"
+          - button "⬆" [disabled] [ref=e266]

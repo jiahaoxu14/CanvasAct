@@ -1,11 +1,10 @@
 import { Box, type TLShapeId } from 'tldraw'
 import { BuildFlowAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import type { SimpleShapeId } from '../../shared/types/ids-schema'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
 import { AgentActionUtil, registerActionUtil } from './AgentActionUtil'
-import { buildFlow, getFlowArrowIds } from './resolveSemanticActions'
+import { buildFlow } from './resolveSemanticActions'
 import { scheduleTargetResolutionFailure } from './resolveTargets'
 
 export const BuildFlowActionUtil = registerActionUtil(
@@ -40,6 +39,18 @@ export const BuildFlowActionUtil = registerActionUtil(
 				return null
 			}
 			action.shapeIds = shapeIds
+			if (action.containerShapeId) {
+				const [containerShapeId] = helpers.ensureShapeIdsExist([action.containerShapeId])
+				if (!containerShapeId) {
+					scheduleTargetResolutionFailure(
+						this.agent,
+						'buildFlow',
+						'The requested fixed flow container does not exist.'
+					)
+					return null
+				}
+				action.containerShapeId = containerShapeId
+			}
 			action.gap = Math.min(30, Math.max(0, action.gap ?? 30))
 			constrainFlowToActiveViewport(this, action)
 			action.createArrows = action.createArrows !== false
@@ -61,39 +72,6 @@ export const BuildFlowActionUtil = registerActionUtil(
 			action.createdShapeIds = result.createdShapeIds
 			action.flowArrowIds = result.flowArrowIds
 		}
-
-		override getActionContract(action: Streaming<BuildFlowAction>): ActionContract | null {
-			if (!action.complete) return null
-			const gap = Math.min(30, Math.max(0, action.gap ?? 30))
-			const flowArrowIds = getFlowArrowIds(this.editor, action.shapeIds)
-			const createdShapeIds = (action.createdShapeIds ?? []).filter((id) =>
-				this.editor.getShape(`shape:${id}` as TLShapeId)
-			)
-			return {
-				actionType: 'buildFlow',
-				intent: action.intent,
-				modifiedShapeIds: [...action.shapeIds, ...flowArrowIds],
-				createdShapeIds,
-				postconditions: [
-					{ type: 'no-overlap', shapeIds: action.shapeIds },
-					{
-						type: 'ordered-layout',
-						shapeIds: action.shapeIds,
-						direction: action.direction,
-						gap,
-						tolerance: 2,
-					},
-					{ type: 'objects-visible', shapeIds: action.shapeIds },
-					...(action.createArrows !== false
-						? ([
-								{ type: 'arrow-bindings', shapeIds: flowArrowIds },
-								{ type: 'connection-sequence', shapeIds: action.shapeIds },
-								{ type: 'no-duplicate-arrows' },
-							] satisfies ActionContract['postconditions'])
-						: []),
-				],
-			}
-		}
 	}
 )
 
@@ -104,8 +82,12 @@ function constrainFlowToActiveViewport(
 	const request = util.agent.requests.getActiveRequest()
 	if (!request || !action.shapeIds || action.shapeIds.length < 2) return
 
-	const viewport = Box.From(request.bounds)
-	const inset = 24
+	const requestedViewport = Box.From(request.bounds)
+	const containerBounds = action.containerShapeId
+		? util.editor.getShapePageBounds(`shape:${action.containerShapeId}` as TLShapeId)
+		: undefined
+	const viewport = containerBounds ?? requestedViewport
+	const inset = containerBounds ? 16 : 24
 	const available = new Box(
 		viewport.minX + inset,
 		viewport.minY + inset,

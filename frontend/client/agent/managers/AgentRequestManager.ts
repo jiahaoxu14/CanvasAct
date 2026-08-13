@@ -25,6 +25,7 @@ export class AgentRequestManager extends BaseAgentManager {
 	 * Whether the agent is currently prompting (working on a request).
 	 */
 	private $isPrompting: Atom<boolean>
+	private $lastError: Atom<string | null>
 
 	/**
 	 * A function that cancels the agent's current prompt, if one is active.
@@ -40,6 +41,7 @@ export class AgentRequestManager extends BaseAgentManager {
 		this.$activeRequest = atom('activeRequest', null)
 		this.$scheduledRequest = atom('scheduledRequest', null)
 		this.$isPrompting = atom('isPrompting', false)
+		this.$lastError = atom('lastRequestError', null)
 	}
 
 	/**
@@ -50,6 +52,7 @@ export class AgentRequestManager extends BaseAgentManager {
 		this.$activeRequest.set(null)
 		this.$scheduledRequest.set(null)
 		this.$isPrompting.set(false)
+		this.$lastError.set(null)
 		this.cancelFn = null
 	}
 
@@ -67,6 +70,14 @@ export class AgentRequestManager extends BaseAgentManager {
 	 */
 	setIsPrompting(value: boolean) {
 		this.$isPrompting.set(value)
+	}
+
+	getLastError() {
+		return this.$lastError.get()
+	}
+
+	setLastError(message: string | null) {
+		this.$lastError.set(message)
 	}
 
 	/**

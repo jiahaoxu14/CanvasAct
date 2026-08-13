@@ -56,8 +56,10 @@ The frontend runs on `http://127.0.0.1:5173`. It serves the `tldraw` agent UI an
 
 Use the switch in the chat-panel header to choose which implementation handles the next prompt:
 
-- **CanvasAct** uses `CanvasObservation`, selector-aware and semantic actions, chunked responses, and local verification/repair.
-- **Original** reproduces the pre-CanvasAct tldraw agent-kit path: legacy shape context, primitive actions with required ids, action-list responses, and no CanvasAct verification loop.
+- **CanvasAct** adds `CanvasObservation` to the model's prompt while reusing the original tldraw action schemas, action-list response, immediate editor execution, `review` action, and lint follow-up.
+- **Original** uses the same actions and lifecycle without `CanvasObservation`.
+
+This keeps the comparison observation-only: CanvasAct has no separate semantic actions, target selectors, action chunks, postcondition verifier, repair budget, or automatic final-review service.
 
 Switching variants starts a fresh chat so prompt histories do not contaminate the comparison. It preserves the canvas, selected model, and recorded trajectories. The selected variant is saved locally and each new trajectory records which variant produced it.
 

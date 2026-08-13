@@ -1,0 +1,130 @@
+- generic [ref=e1]:
+  - application "tldraw" [ref=e3]:
+    - generic [ref=e7]:
+      - paragraph [ref=e278]: Duty officer · Dr. Chen
+      - paragraph [ref=e279]: Pending lineage repair
+      - paragraph [ref=e280]: PUBLIC HEALTH APPROVAL
+      - paragraph [ref=e281]: CHECK
+      - paragraph [ref=e282]: CLEAN
+      - paragraph [ref=e283]: FUSE
+      - paragraph [ref=e284]: PUBLIC HEALTH OPERATIONS · 16:20 PT
+      - paragraph [ref=e285]: CalSmoke v42 · GOES-18
+      - paragraph [ref=e286]: SOURCE LEDGER
+      - paragraph [ref=e287]: HRRR wind · 15:00 cycle
+      - paragraph [ref=e288]: MAP
+      - paragraph [ref=e289]: MODEL
+      - paragraph [ref=e290]: SENSE
+      - paragraph [ref=e291]: STALE PROVENANCE LINKS
+      - paragraph [ref=e292]: Collaborative edits left the exposure-analysis lineage incomplete and unsafe to brief.
+      - paragraph [ref=e293]: "Target: SENSE → CLEAN → FUSE → MODEL → MAP → CHECK → ALERT"
+      - paragraph [ref=e294]: Wildfire smoke lineage
+    - generic:
+      - button "Move focus to canvas" [ref=e8] [cursor=pointer]
+      - generic:
+        - generic:
+          - navigation:
+            - generic:
+              - button "Menu" [ref=e9] [cursor=pointer]
+              - button "Usage Scenario · Smoke Evidence Provenance" [ref=e245] [cursor=pointer]
+              - toolbar "Actions":
+                - button "Undo — ⌘ Z" [ref=e14] [cursor=pointer]
+                - button "Redo — ⌘ ⇧ Z" [disabled] [ref=e16]
+                - button "Delete — ⌫" [disabled] [ref=e18]
+                - button "Duplicate — ⌘ D" [disabled] [ref=e20]
+                - button "Actions" [ref=e22] [cursor=pointer]
+          - button "Reset \"Usage Scenario · Smoke Evidence Provenance\" to its starting state" [active] [ref=e246] [cursor=pointer]:
+            - generic [ref=e248]: Reset usage scenario
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - toolbar "Color" [ref=e26]:
+              - radiogroup [ref=e27]:
+                - radio "Color — Black (selected)" [checked] [ref=e28] [cursor=pointer]
+                - radio "Color — Grey" [ref=e30] [cursor=pointer]
+                - radio "Color — Light violet" [ref=e32] [cursor=pointer]
+                - radio "Color — Violet" [ref=e34] [cursor=pointer]
+                - radio "Color — Blue" [ref=e36] [cursor=pointer]
+                - radio "Color — Light blue" [ref=e38] [cursor=pointer]
+                - radio "Color — Yellow" [ref=e40] [cursor=pointer]
+                - radio "Color — Orange" [ref=e42] [cursor=pointer]
+                - radio "Color — Green" [ref=e44] [cursor=pointer]
+                - radio "Color — Light green" [ref=e46] [cursor=pointer]
+                - radio "Color — Light red" [ref=e48] [cursor=pointer]
+                - radio "Color — Red" [ref=e50] [cursor=pointer]
+            - generic [ref=e53]:
+              - generic [ref=e54] [cursor=pointer]
+              - slider "Opacity — 100%" [ref=e57]
+          - generic [ref=e58]:
+            - toolbar "Fill" [ref=e59]:
+              - radiogroup [ref=e60]:
+                - radio "Fill — None (selected)" [checked] [ref=e61] [cursor=pointer]
+                - radio "Fill — Semi" [ref=e63] [cursor=pointer]
+                - radio "Fill — Solid" [ref=e65] [cursor=pointer]
+              - button "Fill — None" [ref=e68] [cursor=pointer]
+            - toolbar "Dash" [ref=e70]:
+              - radiogroup [ref=e71]:
+                - radio "Dash — Draw (selected)" [checked] [ref=e72] [cursor=pointer]
+                - radio "Dash — Dashed" [ref=e74] [cursor=pointer]
+                - radio "Dash — Dotted" [ref=e76] [cursor=pointer]
+                - radio "Dash — Solid" [ref=e78] [cursor=pointer]
+            - toolbar "Size" [ref=e80]:
+              - radiogroup [ref=e81]:
+                - radio "Size — Small (selected)" [checked] [ref=e82] [cursor=pointer]
+                - radio "Size — Medium" [ref=e84] [cursor=pointer]
+                - radio "Size — Large" [ref=e86] [cursor=pointer]
+                - radio "Size — Extra large" [ref=e88] [cursor=pointer]
+      - generic:
+        - generic:
+          - toolbar "Navigation" [ref=e91]:
+            - button "Zoom — 100%" [ref=e92] [cursor=pointer]:
+              - generic [ref=e93]: 100%
+            - button "Toggle minimap" [ref=e94] [cursor=pointer]
+          - toolbar "Tools" [ref=e96]:
+            - generic [ref=e97]:
+              - button "Select — V" [pressed] [ref=e98] [cursor=pointer]
+              - button "Hand — H" [ref=e100] [cursor=pointer]
+              - button "Draw — D" [ref=e102] [cursor=pointer]
+              - button "Eraser — E" [ref=e104] [cursor=pointer]
+              - button "Arrow — A" [ref=e106] [cursor=pointer]
+              - button "Text — T" [ref=e108] [cursor=pointer]
+              - button "Note — N" [ref=e110] [cursor=pointer]
+              - button "Media — ⌘ U" [ref=e112] [cursor=pointer]
+              - button "Rectangle — R" [ref=e114] [cursor=pointer]
+            - button "More" [ref=e117] [cursor=pointer]
+      - region "Notifications (F8)":
+        - list
+    - button "Get a license for production" [ref=e120] [cursor=pointer]
+  - generic [ref=e121]:
+    - generic [ref=e122]:
+      - generic [ref=e123]:
+        - generic [ref=e124]: Agent
+        - group "Agent implementation" [ref=e125]:
+          - button "CanvasAct selected. Switching starts a fresh chat and keeps the canvas." [pressed] [ref=e126] [cursor=pointer]: CanvasAct
+          - button "Switch to Original tldraw. Switching starts a fresh chat and keeps the canvas." [ref=e127] [cursor=pointer]: Original
+      - button "Start a new chat" [ref=e128] [cursor=pointer]: +
+    - generic [ref=e130]:
+      - region "Suggested prompt" [ref=e251]:
+        - generic [ref=e252]:
+          - generic [ref=e253]:
+            - generic [ref=e254]: Usage scenario
+            - heading "Suggested prompt" [level=2] [ref=e255]
+          - button "Copy" [ref=e256] [cursor=pointer]
+        - paragraph [ref=e257]: "Repair the wildfire-smoke evidence provenance into one complete left-to-right chain inside the visible workspace in this exact order: SENSE → CLEAN → FUSE → MODEL → MAP → CHECK → ALERT. Space all stages evenly and keep exactly one bound black arrow between each adjacent pair. Remove every stale, duplicate, skipped, reversed, or unbound red connector among these stages. Keep the incident title, SOURCE LEDGER, and PUBLIC HEALTH APPROVAL panel unchanged. Do not leave any stage or flow arrow outside the visible workspace. Inspect the final canvas and repair any remaining defect before finishing."
+      - generic [ref=e132]:
+        - generic [ref=e134]:
+          - generic [ref=e135]: Add Context
+          - combobox [ref=e139] [cursor=pointer]:
+            - option "Pick Shapes"
+            - option "Pick Area"
+            - option [selected]
+        - textbox "Ask, learn, brainstorm, draw" [ref=e140]
+        - generic [ref=e141]:
+          - generic [ref=e143]:
+            - generic [ref=e144]: claude-sonnet-4-5
+            - combobox [ref=e153]:
+              - option "claude-sonnet-4-5" [selected]
+              - option "claude-opus-4-5"
+              - option "gemini-3-pro-preview"
+              - option "gemini-3-flash-preview"
+              - option "gpt-5.4"
+              - option "gpt-5.4-mini"
+          - button "⬆" [disabled] [ref=e156]

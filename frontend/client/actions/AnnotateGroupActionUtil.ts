@@ -1,5 +1,4 @@
 import { AnnotateGroupAction } from '../../shared/schema/AgentActionSchemas'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { SimpleShapeId } from '../../shared/types/ids-schema'
 import { Streaming } from '../../shared/types/Streaming'
 import { AgentHelpers } from '../AgentHelpers'
@@ -43,22 +42,6 @@ export const AnnotateGroupActionUtil = registerActionUtil(
 		override applyAction(action: Streaming<AnnotateGroupAction>) {
 			if (!action.complete || !action.shapeIds) return
 			action.createdShapeIds = annotateGroup(this.editor, action.shapeIds, action)
-		}
-
-		override getActionContract(action: Streaming<AnnotateGroupAction>): ActionContract | null {
-			if (!action.complete) return null
-			const createdShapeIds = action.createdShapeIds ?? []
-			return {
-				actionType: 'annotateGroup',
-				intent: action.intent,
-				modifiedShapeIds: action.shapeIds,
-				createdShapeIds,
-				postconditions: [
-					{ type: 'created-shapes-exist', shapeIds: createdShapeIds },
-					{ type: 'text-fits', shapeIds: createdShapeIds },
-					{ type: 'objects-visible', shapeIds: createdShapeIds },
-				],
-			}
 		}
 	}
 )

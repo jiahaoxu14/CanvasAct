@@ -1,4 +1,3 @@
-import { isLegacyAgentMode } from '../../shared/agentVariants'
 import { getActionMeta, type AgentAction } from '../../shared/types/AgentAction'
 import type { PromptPart } from '../../shared/types/PromptPart'
 import type { SystemPromptCategory } from '../../shared/types/SystemPromptCategory'
@@ -6,11 +5,9 @@ import type { SystemPromptCategory } from '../../shared/types/SystemPromptCatego
 export function getSystemPromptFlags(
 	actions: AgentAction['_type'][],
 	parts: PromptPart['type'][],
-	mode: string
+	_mode: string
 ) {
 	return {
-		usesActionChunks: !isLegacyAgentMode(mode),
-
 		// Communication
 		hasMessage: actions.includes('message'),
 
@@ -27,14 +24,6 @@ export function getSystemPromptFlags(
 		hasUpdate: actions.includes('update'),
 		hasLabel: actions.includes('label'),
 		hasMove: actions.includes('move'),
-
-		// Semantic edits
-		hasArrange: actions.includes('arrange'),
-		hasBuildFlow: actions.includes('buildFlow'),
-		hasFitText: actions.includes('fitText'),
-		hasConnect: actions.includes('connect'),
-		hasCleanupLayout: actions.includes('cleanupLayout'),
-		hasAnnotateGroup: actions.includes('annotateGroup'),
 
 		// Groups of shapes
 		hasPlace: actions.includes('place'),

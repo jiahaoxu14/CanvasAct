@@ -2,7 +2,6 @@ import { Editor } from 'tldraw'
 import { AgentAction } from '../../shared/types/AgentAction'
 import { BaseAgentAction } from '../../shared/types/BaseAgentAction'
 import { ChatHistoryInfo } from '../../shared/types/ChatHistoryInfo'
-import { ActionContract } from '../../shared/types/ActionContract'
 import { Streaming } from '../../shared/types/Streaming'
 import { TldrawAgent } from '../agent/TldrawAgent'
 import { AgentHelpers } from '../AgentHelpers'
@@ -152,13 +151,6 @@ export abstract class AgentActionUtil<T extends BaseAgentAction = BaseAgentActio
 	 */
 	applyAction(_action: Streaming<T>, _helpers: AgentHelpers): Promise<void> | void {
 		// Do nothing by default
-	}
-
-	/**
-	 * Declare local postconditions that should be verified after a completed action.
-	 */
-	getActionContract(_action: Streaming<T>, _helpers: AgentHelpers): ActionContract | null {
-		return null
 	}
 
 	/**
