@@ -65,15 +65,16 @@ ${flagged(flags.canEdit, '4. **Ensure each `shapeId` is unique and consistent ac
 
 ### General tips about the canvas
 
-- The coordinate space is the same as on a website: 0,0 is the top left corner. The x-axis increases as you scroll to the right. The y-axis increases as you scroll down the canvas.
+- In prompt/action space, 0,0 is the conversation prompt origin. The x-axis increases to the right and the y-axis increases downward, like coordinates on a website.
+- Every coordinate-bearing action uses prompt/action-space values—the same normalized coordinates shown in the legacy shape and viewport summaries. Never use screenshot pixels or absolute page-space values as action coordinates.
 - For most shapes, the x and y define the top left corner of the shape. However, text shapes use anchor-based positioning where x and y refer to the point specified by the anchor property.
 ${flagged(
 	flags.hasCanvasObservationPart,
-	`- The \`CanvasObservation\` is the authoritative structured scene state for shape ids, geometry, visibility, relations, spatial tiles, and action affordances.
+	`- The \`CanvasObservation\` is a compact semantic overlay for stable shape ids, object state, visibility, workspace structure, and explicit relations.
 - The screenshot is authoritative for final visual appearance. If the observation and screenshot appear to disagree, inspect both: prefer the screenshot for visual quality, but use object ids from \`CanvasObservation.objects\` for actions.
+- Continue to use the legacy shape summaries for the objects they already describe. An offscreen object may include \`actionBounds\`; those bounds are already in prompt/action coordinates.
 - Objects may have \`visible\`, \`partial\`, \`offscreen-near\`, \`offscreen-far\`, or \`occluded\` visibility. Partial objects are still real visible objects, and selected/context objects may be included even when offscreen.
-- Use \`relations\` for arrow endpoints, containment, overlap, alignment, label candidates, and reading order instead of inferring all relationships from coordinates alone.
-- Use \`spatialIndex.nearby\` and \`spatialIndex.far\` to reason about offscreen content before navigating. Tiles include type histograms, representative text, important ids, and links back into the viewport.`
+- Use \`relations\` for arrow endpoints, containment, overlap, alignment, label candidates, and reading order instead of inferring all relationships from coordinates alone.`
 )}
 
 ${flagged(
@@ -83,7 +84,10 @@ ${flagged(
 ${flagged(
 	flags.hasMove,
 	`- When moving shapes:
-	- Always use the \`move\` action to move a shape${flagged(flags.hasUpdate, ', never the `update` action')}.`
+	- Always use the \`move\` action to move a shape${flagged(flags.hasUpdate, ', never the `update` action')}.
+	- The \`move\` action's \`x\` and \`y\` are prompt/action-space coordinates—the model-facing coordinates supplied for actions—not absolute page-space coordinates.
+	- For every shape type, \`move.x\` and \`move.y\` locate the point selected by \`move.anchor\`. Use \`anchor: "top-left"\` as the canonical choice for ordinary shapes unless another anchor is intentional.
+	- For relative moves, change only the requested axes and preserve the current anchor coordinate on every untouched axis. For example, "80 pixels right" adds 80 to x and leaves y unchanged.`
 )}
 ${flagged(
 	flags.hasUpdate,
@@ -132,7 +136,7 @@ ${flagged(
 		- If the anchor is \`top-center\`, the \`x\` and \`y\` coordinates refer to the top-center of the text (and text is center-aligned).
 		- If the anchor is \`bottom-right\`, the \`x\` and \`y\` coordinates refer to the bottom-right corner of the text (and text is right-aligned).
 		- This makes it easy to position text relative to other shapes. For example, to place text to the left of a shape, use anchor \`center-right\` with an \`x\` value just less than the shape's left edge.
-		- This behavior is unique to text shapes. No other shape uses anchor-based positioning, so be careful.
+		- This anchor-based positioning is unique to text shape definitions. The \`move\` action is different: its anchor applies to every shape type, as described above.
 - Labels
 	- Be careful with labels. Did the user ask for labels on their shapes? Did the user ask for a format where labels would be appropriate? If yes, add labels to shapes. If not, do not add labels to shapes. For example, a 'drawing of a cat' should not have the parts of the cat labelled; but a 'diagram of a cat' might have shapes labelled.
 	- When drawing a shape with a label, be sure that the text will fit inside of the label. Label text is generally 26 points tall and each character is about 18 pixels wide. There are 32 pixels of padding around the text on each side. You need to leave room for the padding. Factor this padding into your calculations when determining if the text will fit as you wouldn't want a word to get cut off. When a shape has a text label, it has a minimum height of 100, even if you try to set it to something smaller.

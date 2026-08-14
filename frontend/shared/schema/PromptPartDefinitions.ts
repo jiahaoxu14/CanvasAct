@@ -3,6 +3,7 @@ import { BlurryShape } from '../format/BlurryShape'
 import { CanvasObservation } from '../format/CanvasObservation'
 import { FocusedShape } from '../format/FocusedShape'
 import { PeripheralShapeCluster } from '../format/PeripheralShapesCluster'
+import { buildPromptCanvasObservation } from '../format/PromptCanvasObservation'
 import { AgentModelName } from '../models'
 import type { AgentAction } from '../types/AgentAction'
 import { AgentCanvasLint } from '../types/AgentCanvasLint'
@@ -195,9 +196,10 @@ export const CanvasObservationPartDefinition: PromptPartDefinition<CanvasObserva
 	type: 'canvasObservation',
 	priority: -72,
 	buildContent: ({ observation }) => {
+		const promptObservation = buildPromptCanvasObservation(observation)
 		return [
-			'[CANVAS OBSERVATION]: This is the canonical structured scene state. Use object ids from this observation for actions. Use pageBounds for true canvas geometry, promptBounds for model-facing coordinates, and screenshot.bounds/object screenshotBounds to connect visual evidence to object ids.',
-			JSON.stringify(observation),
+			'[CANVAS OBSERVATION]: This compact semantic overlay augments the legacy canvas context with stable object ids, state, and explicit relations. Continue to use the legacy shape summaries for the objects they already describe. Offscreen objects may include actionBounds; every actionBounds value uses prompt/action coordinates—the same coordinate space expected by action x/y fields—and its x/y is the top-left of the object bounds. Do not treat screenshot pixels or raw page coordinates as action coordinates.',
+			JSON.stringify(promptObservation),
 		]
 	},
 }

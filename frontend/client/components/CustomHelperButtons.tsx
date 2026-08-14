@@ -9,10 +9,10 @@ import {
 	useValue,
 } from 'tldraw'
 import {
-	fitResearchWorkspaceScenario,
-	getCurrentResearchWorkspaceScenario,
-	resetResearchWorkspaceScenario,
-} from '../usageScenario/researchWorkspaceScenario'
+	fitCurrentObservationCaseStudy,
+	getCurrentObservationCaseStudy,
+	resetCurrentObservationCaseStudy,
+} from '../usageScenario/observationCaseStudies'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { GoToAgentButtons } from './GoToAgentButton'
 
@@ -21,35 +21,35 @@ export function CustomHelperButtons() {
 		<DefaultHelperButtons>
 			<TldrawUiMenuContextProvider type="helper-buttons" sourceId="helper-buttons">
 				<DefaultHelperButtonsContent />
-				<ResearchWorkspaceScenarioControls />
+				<ObservationCaseStudyControls />
 				<GoToAgentButtons />
 			</TldrawUiMenuContextProvider>
 		</DefaultHelperButtons>
 	)
 }
 
-function ResearchWorkspaceScenarioControls() {
+function ObservationCaseStudyControls() {
 	const editor = useEditor()
 	const agent = useAgent()
-	const scenarioPageId = useValue(
-		'researchWorkspaceScenarioPageId',
-		() => getCurrentResearchWorkspaceScenario(editor)?.id ?? null,
+	const caseStudyId = useValue(
+		'currentObservationCaseStudyId',
+		() => getCurrentObservationCaseStudy(editor)?.id ?? null,
 		[editor]
 	)
 
 	useEffect(() => {
-		if (scenarioPageId) fitResearchWorkspaceScenario(editor, false)
-	}, [editor, scenarioPageId])
+		if (caseStudyId) fitCurrentObservationCaseStudy(editor, false)
+	}, [caseStudyId, editor])
 
 	const handleReset = useCallback(() => {
 		agent.reset()
-		resetResearchWorkspaceScenario(editor)
+		resetCurrentObservationCaseStudy(editor, () => agent.chatOrigin.reset())
 	}, [agent, editor])
 
-	if (!scenarioPageId) return null
+	if (!caseStudyId) return null
 
 	return (
-		<TldrawUiButton type="low" onClick={handleReset} title="Restore the original case study">
+		<TldrawUiButton type="low" onClick={handleReset} title="Restore this case study">
 			<TldrawUiButtonLabel>Reset scenario</TldrawUiButtonLabel>
 		</TldrawUiButton>
 	)

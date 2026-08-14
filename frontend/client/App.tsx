@@ -22,9 +22,9 @@ import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import {
-	ensureResearchWorkspaceScenarioPage,
-	RESEARCH_WORKSPACE_SCENARIO_VERSION,
-} from './usageScenario/researchWorkspaceScenario'
+	ensureObservationCaseStudySuite,
+	OBSERVATION_CASE_STUDY_SUITE_VERSION,
+} from './usageScenario/observationCaseStudies'
 
 // Customize tldraw's styles to play to the agent's strengths
 DefaultSizeStyle.setDefaultValue('s')
@@ -36,7 +36,8 @@ const LEGACY_CANVAS_PERSISTENCE_KEYS = ['canvasact-agent', 'canvasact-agent-demo
 const TLDRAW_DATABASE_PREFIX = 'TLDRAW_DOCUMENT_v2'
 const TLDRAW_ASSET_DATABASE_PREFIX = 'TLDRAW_ASSET_STORE_v1'
 const TLDRAW_DATABASE_INDEX_KEY = 'TLDRAW_DB_NAME_INDEX_v2'
-const RESEARCH_WORKSPACE_MIGRATION_KEY = 'canvasact-research-workspace-scenario-version'
+const OBSERVATION_CASE_STUDY_MIGRATION_KEY =
+	'canvasact-observation-case-study-suite-version'
 
 function deleteIndexedDatabase(name: string) {
 	return new Promise<void>((resolve, reject) => {
@@ -68,13 +69,14 @@ async function deleteLegacyCanvasSaves() {
 }
 
 const REMOVED_CASE_STUDY_PAGE_NAME =
-	/\bcase[\s_-]*study(?:[\s_-]*(?:1|2)|\s*·\s*(?:coastal storm handoff|metrocare capacity dashboard))\b/i
+	/(?:\bcase[\s_-]*study(?:[\s_-]*(?:1|2)|\s*·\s*(?:coastal storm handoff|metrocare capacity dashboard))\b|^case study\s*·\s*research project workspace$)/i
 const REMOVED_USAGE_SCENARIO_IDS = new Set([
 	'operational-workflow',
 	'dashboard-cleanup',
 	'coastal-storm-handoff',
 	'metrocare-capacity-dashboard',
 	'evidence-synthesis-board',
+	'research-project-workspace',
 ])
 
 function deleteRemovedPrototypePages(editor: Editor) {
@@ -156,18 +158,24 @@ function App() {
 
 	const handleMount = useCallback((mountedApp: TldrawAgentApp) => {
 		deleteRemovedPrototypePages(mountedApp.editor)
-		ensureResearchWorkspaceScenarioPage(mountedApp.editor)
-		if (
-			window.localStorage.getItem(RESEARCH_WORKSPACE_MIGRATION_KEY) !==
-			RESEARCH_WORKSPACE_SCENARIO_VERSION
-		) {
-			mountedApp.agents.resetAllAgents()
-			window.localStorage.setItem(
-				RESEARCH_WORKSPACE_MIGRATION_KEY,
-				RESEARCH_WORKSPACE_SCENARIO_VERSION
-			)
-		}
-		setApp(mountedApp)
+		const shouldRebuildCaseStudies =
+			window.localStorage.getItem(OBSERVATION_CASE_STUDY_MIGRATION_KEY) !==
+			OBSERVATION_CASE_STUDY_SUITE_VERSION
+
+		ensureObservationCaseStudySuite(mountedApp.editor, {
+			rebuild: shouldRebuildCaseStudies,
+			onFit: shouldRebuildCaseStudies
+				? () => {
+						mountedApp.agents.resetAllAgents()
+						window.localStorage.setItem(
+							OBSERVATION_CASE_STUDY_MIGRATION_KEY,
+							OBSERVATION_CASE_STUDY_SUITE_VERSION
+						)
+						setApp(mountedApp)
+					}
+				: undefined,
+		})
+		if (!shouldRebuildCaseStudies) setApp(mountedApp)
 	}, [])
 
 	// Custom components to visualize what the agent is doing

@@ -49,10 +49,17 @@ choose_port() {
 }
 
 sync_agent_env() {
+  # frontend/.dev.vars is the worker's credential source of truth. Never overwrite an
+  # existing file: it may contain a newer key than the root backend environment.
+  if [ -f "$FRONTEND_DEV_VARS" ]; then
+    return
+  fi
+
   if [ ! -f "$ENV_FILE" ]; then
     return
   fi
 
+  umask 077
   grep -E '^(OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY)=' "$ENV_FILE" > "$FRONTEND_DEV_VARS" || true
 }
 

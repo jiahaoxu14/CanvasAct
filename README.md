@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-For agent requests, put provider keys in the root `.env` file:
+For agent requests, put provider keys in `frontend/.dev.vars`:
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
@@ -48,7 +48,8 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
 ```
 
-`dev.sh` copies those keys into `frontend/.dev.vars` automatically for the `tldraw` agent worker.
+If `frontend/.dev.vars` does not exist, `dev.sh` seeds it once from the root `.env`.
+It never overwrites an existing `.dev.vars`, so restarting the prototype cannot replace a newer key.
 
 The frontend runs on `http://127.0.0.1:5173`. It serves the `tldraw` agent UI and worker-backed `/stream` endpoint locally, and it proxies `/api/*` calls to the Flask server on `http://127.0.0.1:5000`.
 

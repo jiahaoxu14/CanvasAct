@@ -59,7 +59,11 @@ registerActionSchema(
 			x: z.number(),
 			y: z.number(),
 		})
-		.meta({ title: 'Move', description: 'The agent moves a shape to a new position.' }),
+		.meta({
+			title: 'Move',
+			description:
+				'The agent moves one shape to a new position. x and y are prompt/action-space coordinates that locate the selected anchor for every shape type. Use top-left as the canonical anchor for ordinary shapes unless another anchor is intentional. For relative moves, change only the requested axes and preserve the current anchor coordinate on every untouched axis.',
+		}),
 	originalMode
 )
 

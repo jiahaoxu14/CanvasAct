@@ -159,19 +159,35 @@ body {
 	background-color: var(--tl-color-muted-2);
 }
 
-.scenario-prompt {
+.observation-lab {
 	margin: 0 16px 10px;
-	padding: 12px;
-	border: 1px solid color-mix(in srgb, var(--tl-color-primary) 26%, var(--tl-color-low));
-	border-radius: 10px;
-	background: color-mix(in srgb, var(--tl-color-primary) 7%, var(--tl-color-panel));
+	padding: 11px 0 2px;
+	border-top: 1px solid color-mix(in srgb, var(--tl-color-primary) 42%, var(--tl-color-low));
+	animation: observation-lab-enter 180ms ease-out;
 }
 
-.scenario-prompt-heading {
+@keyframes observation-lab-enter {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.observation-lab {
+		animation: none;
+	}
+}
+
+.observation-lab-kicker {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	margin-bottom: 8px;
 	color: var(--tl-color-primary);
 	font-size: 10px;
 	font-weight: 700;
@@ -179,40 +195,144 @@ body {
 	text-transform: uppercase;
 }
 
-.scenario-prompt-heading button,
-.scenario-prompt-use {
-	border: 0;
-	border-radius: 6px;
-	cursor: pointer;
-	font: 700 10px/1 'Inter', sans-serif;
+.observation-lab-count {
+	color: var(--tl-color-text-3);
+	font-variant-numeric: tabular-nums;
 }
 
-.scenario-prompt-heading button {
-	padding: 5px 7px;
+.observation-lab-select {
+	display: grid;
+	grid-template-columns: 56px minmax(0, 1fr);
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 9px;
+	color: var(--tl-color-text-2);
+	font-size: 10px;
+}
+
+.observation-lab-select select {
+	min-width: 0;
+	height: 30px;
+	padding: 0 28px 0 9px;
+	border: 1px solid var(--tl-color-low);
+	border-radius: 6px;
+	background: var(--tl-color-muted-1);
+	color: var(--tl-color-text);
+	cursor: pointer;
+	font: 500 10px/1.2 'Inter', sans-serif;
+	transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.observation-lab-select select:hover,
+.observation-lab-select select:focus-visible {
+	border-color: color-mix(in srgb, var(--tl-color-primary) 58%, var(--tl-color-low));
+	background: var(--tl-color-muted-2);
+	outline: none;
+}
+
+.observation-lab-heading > span {
+	display: block;
+	margin-bottom: 2px;
+	color: var(--tl-color-text-3);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.observation-lab-heading h2 {
+	margin: 0;
+	color: var(--tl-color-text);
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1.3;
+}
+
+.observation-lab-comparison {
+	margin: 9px 0;
+	border-top: 1px solid var(--tl-color-low);
+	border-bottom: 1px solid var(--tl-color-low);
+}
+
+.observation-lab-comparison > div {
+	display: grid;
+	grid-template-columns: 56px minmax(0, 1fr);
+	gap: 8px;
+	padding: 6px 0;
+}
+
+.observation-lab-comparison > div + div {
+	border-top: 1px solid color-mix(in srgb, var(--tl-color-low) 70%, transparent);
+}
+
+.observation-lab-comparison dt {
+	color: var(--tl-color-text-3);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.observation-lab-comparison > div:last-child dt {
+	color: var(--tl-color-primary);
+}
+
+.observation-lab-comparison dd {
+	margin: 0;
+	color: var(--tl-color-text-2);
+	font-size: 10px;
+	line-height: 1.35;
+}
+
+.observation-lab-prompt > div {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	color: var(--tl-color-text-3);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+.observation-lab-prompt > div button,
+.observation-lab-use-prompt {
+	border: 0;
+	cursor: pointer;
+	font: 700 10px/1 'Inter', sans-serif;
+	transition: background-color 140ms ease, color 140ms ease, filter 140ms ease;
+}
+
+.observation-lab-prompt > div button {
+	padding: 4px 6px;
+	border-radius: 5px;
 	background: transparent;
 	color: var(--tl-color-text-2);
 }
 
-.scenario-prompt-heading button:hover {
+.observation-lab-prompt > div button:hover {
 	background: var(--tl-color-muted-2);
 	color: var(--tl-color-text);
 }
 
-.scenario-prompt p {
-	margin: 8px 0 10px;
+.observation-lab-prompt p {
+	margin: 4px 0 8px;
+	padding-left: 8px;
+	border-left: 2px solid var(--tl-color-primary);
 	color: var(--tl-color-text);
 	font-size: 11px;
-	line-height: 1.45;
+	line-height: 1.4;
 }
 
-.scenario-prompt-use {
+.observation-lab-use-prompt {
 	width: 100%;
-	padding: 8px 10px;
+	padding: 7px 9px;
+	border-radius: 6px;
 	background: var(--tl-color-primary);
 	color: var(--tl-color-panel-contrast);
 }
 
-.scenario-prompt-use:hover {
+.observation-lab-use-prompt:hover {
 	filter: brightness(1.06);
 }
 

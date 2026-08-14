@@ -83,6 +83,13 @@ for (const actionType of removedCompoundActionTypes) {
 const originalPrompt = buildSystemPrompt(promptFor(original))
 const canvasActPrompt = buildSystemPrompt(promptFor(canvasAct))
 
+const sharedMovePromptGuidance = [
+	"The `move` action's `x` and `y` are prompt/action-space coordinates",
+	'For every shape type, `move.x` and `move.y` locate the point selected by `move.anchor`.',
+	'Use `anchor: "top-left"` as the canonical choice for ordinary shapes',
+	'For relative moves, change only the requested axes',
+] as const
+
 assert.equal(originalPrompt.includes('CanvasObservation'), false)
 assert.equal(canvasActPrompt.includes('CanvasObservation'), true)
 for (const [variant, prompt] of [
@@ -112,6 +119,13 @@ for (const [variant, prompt] of [
 		true,
 		`${variant} does not advertise legacy review`,
 	)
+	for (const guidance of sharedMovePromptGuidance) {
+		assert.equal(
+			prompt.includes(guidance),
+			true,
+			`${variant} does not advertise shared move coordinate guidance: ${guidance}`,
+		)
+	}
 }
 
 // Both modes use the exact legacy response envelope and exact per-action schema.
@@ -127,6 +141,21 @@ for (const [variant, schema] of [
 	assert.equal(serialized.includes('referenceSelector'), false, `${variant} schema still has selectors`)
 	assert.equal(serialized.includes('postcondition'), false, `${variant} schema still has contracts`)
 	assert.equal(serialized.includes('"chunks"'), false, `${variant} schema still has chunks`)
+	assert.equal(
+		serialized.includes('x and y are prompt/action-space coordinates'),
+		true,
+		`${variant} move schema does not define prompt/action-space coordinates`,
+	)
+	assert.equal(
+		serialized.includes('locate the selected anchor for every shape type'),
+		true,
+		`${variant} move schema does not define anchor semantics`,
+	)
+	assert.equal(
+		serialized.includes('preserve the current anchor coordinate on every untouched axis'),
+		true,
+		`${variant} move schema does not define relative-move axis preservation`,
+	)
 }
 
 const originalResponseSchema = buildResponseZodSchema(original.actions, original.type)
