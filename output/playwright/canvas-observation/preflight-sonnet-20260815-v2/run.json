@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "runId": "preflight-sonnet-20260815-v2",
+  "status": "complete",
+  "startedAt": "2026-08-15T21:57:18.037Z",
+  "finishedAt": "2026-08-15T21:57:23.020Z",
+  "updatedAt": "2026-08-15T21:57:23.020Z",
+  "config": {
+    "profile": "pilot",
+    "seed": "1620d1b606f80a02",
+    "url": "http://127.0.0.1:5173/?eval=1",
+    "outputDir": "/Users/jiahaoxu/Github/CanvasAct/output/playwright/canvas-observation/preflight-sonnet-20260815-v2",
+    "caseIds": [
+      "viewport-coverage"
+    ],
+    "selectedCases": [
+      {
+        "id": "viewport-coverage",
+        "label": "viewport-coverage",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "editable-middle",
+            "prompt": "Move the current working copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report."
+          }
+        ]
+      }
+    ],
+    "rotationIds": [],
+    "rotationLimit": 1,
+    "modelNames": [
+      "claude-sonnet-4-5"
+    ],
+    "variants": [
+      "canvasact",
+      "original-tldraw"
+    ],
+    "repetitions": 1,
+    "bridgeName": "__canvasObsEval",
+    "bridgeMethods": {
+      "listCases": "listCases",
+      "prepareTrial": "prepareTrial",
+      "prompt": "prompt",
+      "waitForIdle": "waitForIdle",
+      "exportState": "exportState"
+    },
+    "bridgeTimeoutMs": 60000,
+    "navigationTimeoutMs": 60000,
+    "trialTimeoutMs": 240000,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "headless": true,
+    "browserChannel": "chrome",
+    "browserExecutablePath": null,
+    "startServers": false,
+    "backendPort": 5000,
+    "reloadEachTrial": true,
+    "failFast": false,
+    "screenshotMode": "after"
+  },
+  "browser": {
+    "engine": "chromium",
+    "version": "151.0.7922.138",
+    "channel": "chrome",
+    "executablePath": null,
+    "headless": true
+  },
+  "scheduledTrialCount": 2,
+  "completedTrialCount": 2
+}

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "runId": "pilot-gpt54-20260815",
+  "status": "complete-with-errors",
+  "startedAt": "2026-08-15T22:21:29.073Z",
+  "finishedAt": "2026-08-15T22:25:45.828Z",
+  "updatedAt": "2026-08-15T22:25:45.828Z",
+  "config": {
+    "profile": "pilot",
+    "seed": "7d0d78df3907535d",
+    "url": "http://127.0.0.1:5174/?eval=1",
+    "outputDir": "/Users/jiahaoxu/Github/CanvasAct/output/playwright/canvas-observation/pilot-gpt54-20260815",
+    "caseIds": [
+      "viewport-coverage",
+      "object-state",
+      "workspace-structure",
+      "explicit-relations"
+    ],
+    "selectedCases": [
+      {
+        "id": "viewport-coverage",
+        "label": "viewport-coverage",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "editable-middle",
+            "prompt": "Move the editable copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report."
+          }
+        ]
+      },
+      {
+        "id": "object-state",
+        "label": "object-state",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "blue-middle",
+            "prompt": "Move the blue “Handoff breakdown” chart into the Chart slot in Friday’s report."
+          }
+        ]
+      },
+      {
+        "id": "workspace-structure",
+        "label": "workspace-structure",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "calls-attached",
+            "prompt": "Two cards were accidentally pasted over Study setup A instead of filed inside it. Move those loose cards into Study setup B."
+          }
+        ]
+      },
+      {
+        "id": "explicit-relations",
+        "label": "explicit-relations",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "upper-bound",
+            "prompt": "Move the “Lost decision context” finding supported by Interview evidence into the Claim slot in Friday’s report."
+          }
+        ]
+      }
+    ],
+    "rotationIds": [],
+    "rotationLimit": 1,
+    "modelNames": [
+      "gpt-5.4"
+    ],
+    "variants": [
+      "canvasact",
+      "original-tldraw"
+    ],
+    "repetitions": 2,
+    "bridgeName": "__canvasObsEval",
+    "bridgeMethods": {
+      "listCases": "listCases",
+      "prepareTrial": "prepareTrial",
+      "prompt": "prompt",
+      "waitForIdle": "waitForIdle",
+      "exportState": "exportState"
+    },
+    "bridgeTimeoutMs": 60000,
+    "navigationTimeoutMs": 60000,
+    "trialTimeoutMs": 240000,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "headless": true,
+    "browserChannel": "chrome",
+    "browserExecutablePath": null,
+    "startServers": false,
+    "backendPort": 5000,
+    "reloadEachTrial": true,
+    "failFast": false,
+    "screenshotMode": "after"
+  },
+  "browser": {
+    "engine": "chromium",
+    "version": "151.0.7922.138",
+    "channel": "chrome",
+    "executablePath": null,
+    "headless": true
+  },
+  "scheduledTrialCount": 16,
+  "completedTrialCount": 16
+}

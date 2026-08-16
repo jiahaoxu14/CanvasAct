@@ -1,0 +1,34 @@
+.DS_Store
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.env
+*.env
+.dev.vars
+*.dev.vars
+.venv/
+backend/.venv/
+backend/data/*.json
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.tsbuild/
+frontend/.wrangler/
+
+# Paper sources, figures, builds, and submission artifacts
+reports/
+docs/canvasobs_full_experiment_protocol.md
+tmp/pdfs/
+
+# Paired browser-experiment figures and per-trial JSON
+output/playwright/canvas-observation/**/screenshots/
+output/playwright/canvas-observation/**/pair-*.json
+output/playwright/canvas-observation/**/results.jsonl

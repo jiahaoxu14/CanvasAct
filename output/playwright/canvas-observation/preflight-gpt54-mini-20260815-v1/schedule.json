@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runId": "preflight-gpt54-mini-20260815-v1",
+  "trials": [
+    {
+      "trialId": "pair-c9a054e2261bc466--original-tldraw",
+      "pairId": "pair-c9a054e2261bc466",
+      "withinPairOrder": 0,
+      "repetition": 1,
+      "modelName": "gpt-5.4-mini",
+      "caseId": "viewport-coverage",
+      "caseLabel": "viewport-coverage",
+      "rotation": "canonical",
+      "resolvedRotation": "editable-middle",
+      "variant": "original-tldraw",
+      "prompt": "Move the editable copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report.",
+      "ordinal": 1,
+      "pairOrdinal": 1
+    },
+    {
+      "trialId": "pair-c9a054e2261bc466--canvasact",
+      "pairId": "pair-c9a054e2261bc466",
+      "withinPairOrder": 1,
+      "repetition": 1,
+      "modelName": "gpt-5.4-mini",
+      "caseId": "viewport-coverage",
+      "caseLabel": "viewport-coverage",
+      "rotation": "canonical",
+      "resolvedRotation": "editable-middle",
+      "variant": "canvasact",
+      "prompt": "Move the editable copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report.",
+      "ordinal": 2,
+      "pairOrdinal": 1
+    }
+  ]
+}

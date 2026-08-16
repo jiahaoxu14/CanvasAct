@@ -108,15 +108,15 @@ export function ChatPanel() {
 			<div className="chat-input-container">
 				<TodoList agent={agent} />
 				{currentCaseStudy && (
-					<section className="observation-lab" aria-label="Observation Lab case study">
+					<section className="observation-lab" aria-label="Remote Team Handoff Study">
 						<div className="observation-lab-kicker">
-							<span>Observation Lab</span>
+							<span>Remote Team Handoff Study</span>
 							<span className="observation-lab-count">
 								{currentCaseStudyIndex + 1} / {OBSERVATION_CASE_STUDIES.length}
 							</span>
 						</div>
 						<label className="observation-lab-select">
-							<span>Case study</span>
+							<span>Step</span>
 							<select value={currentCaseStudy.id} onChange={handleCaseStudyChange}>
 								{OBSERVATION_CASE_STUDIES.map((caseStudy, index) => (
 									<option key={caseStudy.id} value={caseStudy.id}>
@@ -125,9 +125,13 @@ export function ChatPanel() {
 								))}
 							</select>
 						</label>
+						<p className="observation-lab-sequence-note">
+							Each step starts with the earlier report edits complete.
+						</p>
 						<div className="observation-lab-heading">
 							<span>{currentCaseStudy.aspect}</span>
 							<h2>{currentCaseStudy.title}</h2>
+							<p>{currentCaseStudy.story}</p>
 						</div>
 						<dl className="observation-lab-comparison">
 							<div>
@@ -135,13 +139,13 @@ export function ChatPanel() {
 								<dd>{currentCaseStudy.legacy}</dd>
 							</div>
 							<div>
-								<dt>CanvasAct</dt>
+								<dt>CanvasObs</dt>
 								<dd>{currentCaseStudy.canvasAct}</dd>
 							</div>
 						</dl>
 						<div className="observation-lab-prompt">
 							<div>
-								<span>Suggested prompt</span>
+								<span>Researcher’s request</span>
 								<button type="button" onClick={handleCopyPrompt}>
 									{copyState === 'copied' ? 'Copied' : 'Copy'}
 								</button>

@@ -10,7 +10,7 @@ type Test = { name: string; run: () => void | Promise<void> }
 
 const tests: Test[] = [
 	{
-		name: 'CanvasAct reuses the exact original review and lint lifecycle node',
+		name: 'CanvasObs reuses the exact original review and lint lifecycle node',
 		run() {
 			assert.equal(getModeNode('working'), getModeNode('working-legacy'))
 		},
@@ -79,7 +79,7 @@ const tests: Test[] = [
 		},
 	},
 	{
-		name: 'CanvasAct and original tldraw use the same todo continuation behavior',
+		name: 'CanvasObs and original tldraw use the same todo continuation behavior',
 		async run() {
 			const outputs = await Promise.all(
 				(['working', 'working-legacy'] as const).map((mode) =>
@@ -98,7 +98,7 @@ const tests: Test[] = [
 		},
 	},
 	{
-		name: 'CanvasAct and original tldraw use the same legacy lint follow-up',
+		name: 'CanvasObs and original tldraw use the same legacy lint follow-up',
 		async run() {
 			const outputs = await Promise.all(
 				(['working', 'working-legacy'] as const).map((mode) =>
@@ -124,6 +124,42 @@ const tests: Test[] = [
 			for (const mode of ['working', 'working-legacy'] as const) {
 				const output = await runPromptEnd(mode)
 				assert.deepEqual(output, { scheduled: [], mode: 'idling' })
+			}
+		},
+	},
+	{
+		name: 'non-2xx stream responses reject safely while empty 2xx streams remain valid',
+		async run() {
+			const originalFetch = globalThis.fetch
+			try {
+				globalThis.fetch = async () =>
+					new Response(
+						JSON.stringify({
+							error: {
+								message:
+									'Provider failed with OPENAI_API_KEY=top-secret and sk-proj-abcdefghijklmnopqrstuvwxyz.',
+							},
+						}),
+						{ status: 503, statusText: 'Service Unavailable' },
+					)
+
+				const failed = createStreamRequestHarness()
+				await assert.rejects(failed.promise, (error: unknown) => {
+					assert.ok(error instanceof Error)
+					assert.match(error.message, /\/stream returned HTTP 503 Service Unavailable/)
+					assert.doesNotMatch(error.message, /top-secret|sk-proj-/)
+					return true
+				})
+				assert.deepEqual(failed.trajectoryStatuses, ['failed'])
+				assert.deepEqual(failed.reportedErrors, [])
+
+				globalThis.fetch = async () => new Response('', { status: 200 })
+				const abstained = createStreamRequestHarness()
+				await assert.doesNotReject(abstained.promise)
+				assert.deepEqual(abstained.trajectoryStatuses, ['completed'])
+				assert.deepEqual(abstained.reportedErrors, [])
+			} finally {
+				globalThis.fetch = originalFetch
 			}
 		},
 	},
@@ -199,6 +235,44 @@ function createLifecycleHarness(initialVariant: AgentVariant) {
 	agent.requests = new AgentRequestManager(agent)
 
 	return { agent, cancelCalls }
+}
+
+function createStreamRequestHarness() {
+	const agent = Object.create(TldrawAgent.prototype) as TldrawAgent
+	const trajectoryStatuses: string[] = []
+	const reportedErrors: unknown[] = []
+
+	Object.assign(agent, {
+		editor: {
+			getSelectedShapes: () => [],
+		},
+		chat: { push: () => undefined },
+		chatOrigin: { getOrigin: () => ({ x: 0, y: 0 }) },
+		mode: {
+			getCurrentModeDefinition: () => ({ active: true, actions: [] }),
+		},
+		preparePrompt: async () => ({ mode: { actionTypes: [] } }),
+		trajectories: {
+			startRequest: () => undefined,
+			finishRequest: (status: string) => trajectoryStatuses.push(status),
+		},
+		onError: (error: unknown) => reportedErrors.push(error),
+	})
+
+	const request: AgentRequest = {
+		agentMessages: ['Exercise stream transport handling.'],
+		userMessages: [],
+		bounds: { x: 0, y: 0, w: 1024, h: 768 },
+		data: [],
+		source: 'user',
+		contextItems: [],
+	}
+	const requestAgentActions = Reflect.get(agent, 'requestAgentActions') as (
+		this: TldrawAgent,
+		request: AgentRequest,
+	) => { promise: Promise<void>; cancel: () => void }
+	const { promise } = requestAgentActions.call(agent, request)
+	return { promise, trajectoryStatuses, reportedErrors }
 }
 
 async function runPromptEnd(

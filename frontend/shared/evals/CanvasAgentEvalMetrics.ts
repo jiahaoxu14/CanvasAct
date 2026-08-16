@@ -2,7 +2,7 @@ import type { CanvasObservation } from '../format/CanvasObservation'
 import type { SimpleShapeId } from '../types/ids-schema'
 import type { CanvasAgentEvalFixture } from './CanvasAgentEvalFixtures'
 
-/** Metrics for the observation layer that remains in the CanvasAct prototype. */
+/** Metrics for the observation layer that remains in the CanvasObs prototype. */
 export interface CanvasAgentEvalMetrics {
 	objectRecall: number | null
 	visibilityAccuracy: number | null

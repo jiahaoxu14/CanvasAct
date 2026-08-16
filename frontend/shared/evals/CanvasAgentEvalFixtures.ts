@@ -27,7 +27,7 @@ export interface CanvasAgentEvalFixture {
 }
 
 /**
- * CanvasAct now changes perception only. These deterministic fixtures therefore
+ * CanvasObs now changes perception only. These deterministic fixtures therefore
  * evaluate CanvasObservation itself, not selectors, action contracts, chunks,
  * repair loops, or a separate reviewer.
  */

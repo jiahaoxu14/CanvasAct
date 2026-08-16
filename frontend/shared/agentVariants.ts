@@ -1,7 +1,7 @@
 export const AGENT_VARIANT_DEFINITIONS = {
 	canvasact: {
 		id: 'canvasact',
-		label: 'CanvasAct',
+		label: 'CanvasObs',
 		description: 'Structured canvas observation with the original tldraw action and review loop.',
 		workingMode: 'working',
 	},

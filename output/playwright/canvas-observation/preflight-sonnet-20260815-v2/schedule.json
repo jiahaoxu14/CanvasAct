@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runId": "preflight-sonnet-20260815-v2",
+  "trials": [
+    {
+      "trialId": "pair-e88f8f9be9266d55--original-tldraw",
+      "pairId": "pair-e88f8f9be9266d55",
+      "withinPairOrder": 0,
+      "repetition": 1,
+      "modelName": "claude-sonnet-4-5",
+      "caseId": "viewport-coverage",
+      "caseLabel": "viewport-coverage",
+      "rotation": "canonical",
+      "resolvedRotation": "editable-middle",
+      "variant": "original-tldraw",
+      "prompt": "Move the current working copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report.",
+      "ordinal": 1,
+      "pairOrdinal": 1
+    },
+    {
+      "trialId": "pair-e88f8f9be9266d55--canvasact",
+      "pairId": "pair-e88f8f9be9266d55",
+      "withinPairOrder": 1,
+      "repetition": 1,
+      "modelName": "claude-sonnet-4-5",
+      "caseId": "viewport-coverage",
+      "caseLabel": "viewport-coverage",
+      "rotation": "canonical",
+      "resolvedRotation": "editable-middle",
+      "variant": "canvasact",
+      "prompt": "Move the current working copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report.",
+      "ordinal": 2,
+      "pairOrdinal": 1
+    }
+  ]
+}

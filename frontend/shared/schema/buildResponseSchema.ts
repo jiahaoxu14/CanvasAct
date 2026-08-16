@@ -37,7 +37,7 @@ export function buildResponseSchema(actionTypes: AgentAction['_type'][], mode: s
  * Build the runtime response schema for an agent mode.
  *
  * Keep this as the single source of truth for both the JSON schema shown to the
- * model. CanvasAct intentionally uses the same top-level action response as
+ * model. CanvasObs intentionally uses the same top-level action response as
  * the original tldraw agent; its method difference is observation only.
  */
 export function buildResponseZodSchema(actionTypes: AgentAction['_type'][], mode: string) {

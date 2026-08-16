@@ -90,7 +90,7 @@ const _AGENT_MODE_CHART: Record<AgentModeDefinition['type'], AgentModeNode> = {
 			agent.userAction.clearHistory()
 		},
 	},
-	// CanvasAct deliberately reuses the original tldraw lifecycle. Its only
+	// CanvasObs deliberately reuses the original tldraw lifecycle. Its only
 	// runtime difference is the additional structured CanvasObservation part.
 	working: legacyWorkingModeNode,
 	'working-legacy': legacyWorkingModeNode,

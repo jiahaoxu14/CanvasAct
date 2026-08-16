@@ -6,13 +6,13 @@ import {
 	type TLFrameShape,
 	type TLGeoShape,
 	type TLPage,
+	type TLParentId,
 	type TLShapeId,
-	type TLTextShape,
 	toRichText,
 } from 'tldraw'
 
 export const OBSERVATION_CASE_STUDY_SUITE_ID = 'canvas-observation-lab'
-export const OBSERVATION_CASE_STUDY_SUITE_VERSION = '4'
+export const OBSERVATION_CASE_STUDY_SUITE_VERSION = '32'
 
 export type ObservationCaseStudyId =
 	| 'viewport-coverage'
@@ -34,60 +34,83 @@ export interface ObservationCaseStudyDefinition {
 	pageName: string
 	title: string
 	aspect: string
+	story: string
+	completedBefore: number
 	prompt: string
 	legacy: string
 	canvasAct: string
 	viewX: number
+	viewWidth: number
 	createShapes(editor: Editor): void
 }
 
-const VIEWPORT_WIDTH = 1200
-const VIEWPORT_CENTER_Y = 400
+const VIEWPORT_HEIGHT = 800
+// Leave extra room below the workflow on narrow canvases for tldraw's floating toolbars,
+// without pushing the top-row frame labels under the navigation bar.
+const NARROW_VIEWPORT_Y = 80
 
 export const OBSERVATION_CASE_STUDIES: readonly ObservationCaseStudyDefinition[] = [
 	{
 		id: 'viewport-coverage',
-		pageName: 'Observation Lab · 01 Viewport Coverage',
-		title: 'Offscreen identity under ambiguity',
-		aspect: 'Workspace coverage',
-		prompt: 'Place the only unlocked, offscreen “Q3 Result” below “Synthesis”.',
-		legacy: 'Initially anonymous; after navigation, its shape summaries still omit lock state.',
-		canvasAct: 'Each offscreen card retains its ID, full bounds, and locked flag.',
-		viewX: 0,
-		createShapes: createViewportCoverageCase,
+		pageName: 'Remote Team Handoff · 01 Stage Takeaway',
+		title: 'Stage the current takeaway',
+		aspect: 'Step 1 · Workspace coverage',
+		story:
+			'To start Friday’s report, the researcher pulls in the team’s live takeaway from its saved versions.',
+		completedBefore: 0,
+		prompt: 'Add the current working copy of “Unclear ownership delays handoffs” to Friday’s report.',
+		legacy: 'The saved versions are initially anonymous, and later summaries still omit which copy is editable.',
+		canvasAct: 'Each saved version retains its ID, action-space bounds, and locked state.',
+		viewX: 20,
+		viewWidth: 1680,
+		createShapes: (editor) => createResearchWorkspace(editor, 'viewport-coverage', 0),
 	},
 	{
 		id: 'object-state',
-		pageName: 'Observation Lab · 02 Object State',
-		title: 'Occluded draft identity',
-		aspect: 'Object state',
-		prompt: 'Move only the blue “Figure 3 draft” into “Review”.',
-		legacy: 'The screenshot shows only the top draft; identical summaries omit hidden colors.',
-		canvasAct: 'Every layer retains its color, z-index, visibility, and occlusion relations.',
-		viewX: 0,
-		createShapes: createObjectStateCase,
+		pageName: 'Remote Team Handoff · 02 Stage Chart',
+		title: 'Stage the approved chart',
+		aspect: 'Step 2 · Object state',
+		story: 'With the takeaway in place, the team stages its approved chart for Friday’s review.',
+		completedBefore: 1,
+		prompt: 'The team chose the blue “Handoff breakdown” chart. Add it to Friday’s report.',
+		legacy: 'The screenshot shows only the top chart; identical summaries omit the hidden colors.',
+		canvasAct: 'Every chart retains its color, layer order, visibility, and occlusion relations.',
+		viewX: 20,
+		viewWidth: 1680,
+		createShapes: (editor) => createResearchWorkspace(editor, 'object-state', 1),
 	},
 	{
 		id: 'workspace-structure',
-		pageName: 'Observation Lab · 03 Workspace Structure',
-		title: 'True frame membership',
-		aspect: 'Workspace structure',
-		prompt: 'Move only the two cards that are actual members of “Methods” 80 pixels right.',
-		legacy: 'All four cards look enclosed, so membership must be inferred from pixels.',
-		canvasAct: 'Parent and frame-member relations distinguish real children from visual overlap.',
-		viewX: 0,
-		createShapes: createWorkspaceStructureCase,
+		pageName: 'Remote Team Handoff · 03 Split Study Setups',
+		title: 'Move the loose setup cards',
+		aspect: 'Step 3 · Workspace structure',
+		story:
+			'During handoff, two cards were pasted over the first setup frame instead of being filed with the second.',
+		completedBefore: 2,
+		prompt:
+			'Move the two unattached cards from “Study setup A” to the empty “Study setup B”.',
+		legacy:
+			'All four cards appear inside Study setup A, while legacy summaries omit which two are native frame children.',
+		canvasAct:
+			'Two frame-member relations identify the attached pair, leaving the other two cards to move.',
+		viewX: 20,
+		viewWidth: 1680,
+		createShapes: (editor) => createResearchWorkspace(editor, 'workspace-structure', 2),
 	},
 	{
 		id: 'explicit-relations',
-		pageName: 'Observation Lab · 04 Explicit Relations',
-		title: 'Bound versus touching arrows',
-		aspect: 'Relationships',
-		prompt: 'Move the “Result” node that is actually connected to “Data” into “Review”.',
-		legacy: 'The two arrows look connected and their topology must be inferred visually.',
-		canvasAct: 'Arrow start, end, and connects relations identify the bound result.',
-		viewX: 0,
-		createShapes: createExplicitRelationsCase,
+		pageName: 'Remote Team Handoff · 04 Complete Report',
+		title: 'Add the supported finding',
+		aspect: 'Step 4 · Explicit relations',
+		story: 'Before sharing the report, the researcher adds a finding with traceable interview support.',
+		completedBefore: 3,
+		prompt: 'Move the interview-backed “Lost decision context” finding to Friday’s report.',
+		legacy: 'Both arrows appear to touch a finding, so the real evidence link must be inferred visually.',
+		canvasAct: 'The native arrow binding explicitly records the evidence-to-finding relationship.',
+		// Every checkpoint uses the same overview so switching steps never changes the framing.
+		viewX: 20,
+		viewWidth: 1680,
+		createShapes: (editor) => createResearchWorkspace(editor, 'explicit-relations', 3),
 	},
 ] as const
 
@@ -225,26 +248,42 @@ export function fitCurrentObservationCaseStudy(
 		const currentCaseStudy = getCurrentObservationCaseStudy(editor)
 		if (!currentCaseStudy || currentCaseStudy.id !== caseStudy.id) return
 
+		// The editor normally tracks this via ResizeObserver, but synchronizing here prevents an
+		// initial fit from using tldraw's fallback viewport before the DOM measurement arrives.
+		editor.updateViewportScreenBounds(editor.getContainer())
 		const viewport = editor.getViewportScreenBounds()
-		if (viewport.w <= 0 || viewport.h <= 0) {
-			editor.zoomToBounds(new Box(caseStudy.viewX, 0, VIEWPORT_WIDTH, 800), {
-				inset: 0,
+		const viewY = viewport.w <= 768 ? NARROW_VIEWPORT_Y : 0
+		editor.zoomToBounds(
+			new Box(caseStudy.viewX, viewY, caseStudy.viewWidth, VIEWPORT_HEIGHT),
+			{
 				animation: animate ? { duration: 220 } : undefined,
-			})
-		} else {
-			const zoom = viewport.w / VIEWPORT_WIDTH
-			const viewportPageHeight = viewport.h / zoom
-			const viewportTop = VIEWPORT_CENTER_Y - viewportPageHeight / 2
-			editor.setCamera(
-				{ x: -caseStudy.viewX, y: -viewportTop, z: zoom },
-				{ animation: animate ? { duration: 220 } : undefined }
-			)
-		}
+			}
+		)
 		onFit?.()
 	}
 
 	if (typeof window === 'undefined') fit()
 	else window.requestAnimationFrame(fit)
+}
+
+/** Keep a workflow checkpoint framed when its canvas changes size. */
+export function installObservationCaseStudyAutoFit(editor: Editor) {
+	let animationFrame: number | null = null
+
+	const handleResize = () => {
+		if (!getCurrentObservationCaseStudy(editor)) return
+		if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+		animationFrame = window.requestAnimationFrame(() => {
+			animationFrame = null
+			fitCurrentObservationCaseStudy(editor, false)
+		})
+	}
+
+	editor.on('resize', handleResize)
+	return () => {
+		editor.off('resize', handleResize)
+		if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+	}
 }
 
 function getObservationCaseStudyForPage(page: TLPage | undefined) {
@@ -272,6 +311,8 @@ function getPageMeta(caseStudy: ObservationCaseStudyDefinition) {
 		canvasActUsageScenarioVersion: OBSERVATION_CASE_STUDY_SUITE_VERSION,
 		canvasActUsageScenarioPrompt: caseStudy.prompt,
 		canvasActUsageScenarioAspect: caseStudy.aspect,
+		canvasActUsageScenarioStory: caseStudy.story,
+		canvasActUsageScenarioCompletedBefore: caseStudy.completedBefore,
 	}
 }
 
@@ -298,155 +339,304 @@ function resetCaseStudyPage(
 	caseStudy.createShapes(editor)
 }
 
-function createViewportCoverageCase(editor: Editor) {
-	createGeo(editor, 'viewport-coverage', 'd4h8', 440, 240, 320, 160, 'Synthesis', {
-		color: 'blue',
-		fill: 'semi',
-		size: 'm',
-	})
-	createText(editor, 'viewport-coverage', 'w3c6', 980, 105, 190, 'Q3 evidence tray  →', {
-		color: 'grey',
-		size: 's',
-	})
-	createGeo(editor, 'viewport-coverage', 'p5x1', 1240, 80, 560, 650, 'Q3 evidence tray', {
-		color: 'grey',
-		fill: 'none',
-		dash: 'dashed',
-		size: 's',
-		verticalAlign: 'start',
-	})
-	// The candidates use opaque IDs and identical visible styling. Their lock state is native
-	// tldraw state—not answer-bearing metadata—and is only explicit in CanvasObservation.
-	createGeo(editor, 'viewport-coverage', 'k2m9', 1320, 160, 360, 120, 'Q3 Result', {
-		color: 'light-blue',
-		fill: 'solid',
-		size: 'm',
-		isLocked: true,
-	})
-	createGeo(editor, 'viewport-coverage', 'n7q4', 1320, 340, 360, 120, 'Q3 Result', {
-		color: 'light-blue',
-		fill: 'solid',
-		size: 'm',
-	})
-	createGeo(editor, 'viewport-coverage', 'r8v3', 1320, 520, 360, 120, 'Q3 Result', {
-		color: 'light-blue',
-		fill: 'solid',
-		size: 'm',
-		isLocked: true,
-	})
+/**
+ * Build one realistic handoff-report workspace at a deterministic checkpoint.
+ * Every case-study page contains this same logical board. `completedSteps` applies the
+ * canonical outcomes of earlier prompts so the four pages read as a continuous workflow.
+ */
+function createResearchWorkspace(
+	editor: Editor,
+	caseStudyId: ObservationCaseStudyId,
+	completedSteps: number
+) {
+	createWorkspaceZones(editor, caseStudyId)
+	// Create the report slots before their source cards so moved content renders above the slots.
+	createReviewArea(editor, caseStudyId)
+	createMethodsArea(editor, caseStudyId)
+	createSynthesisArea(editor, caseStudyId)
+	createEvidenceMap(editor, caseStudyId)
+	createFigureAlternatives(editor, caseStudyId)
+	createReviewChecklist(editor, caseStudyId, completedSteps)
+	createVersionArchive(editor, caseStudyId)
+	applyCompletedWorkflowSteps(editor, caseStudyId, completedSteps)
 }
 
-function createObjectStateCase(editor: Editor) {
-	createText(editor, 'object-state', 'w6t1', 160, 180, 360, 'Figure 3 alternatives · 4 stacked', {
-		color: 'grey',
-		size: 's',
-	})
-	// These cards have exactly the same visible geometry and label. The opaque top layer hides
-	// every lower layer from the screenshot, while CanvasObservation retains each layer's style
-	// and z-order. Opaque IDs prevent the identifier itself from hinting at the requested color.
-	createGeo(editor, 'object-state', 'v7p2', 160, 250, 300, 190, 'Figure 3 draft', {
-		color: 'orange',
-		fill: 'solid',
-		size: 'l',
-	})
-	createGeo(editor, 'object-state', 'm4q8', 160, 250, 300, 190, 'Figure 3 draft', {
-		color: 'blue',
-		fill: 'solid',
-		size: 'l',
-	})
-	createGeo(editor, 'object-state', 'c9r5', 160, 250, 300, 190, 'Figure 3 draft', {
-		color: 'yellow',
-		fill: 'solid',
-		size: 'l',
-	})
-	createGeo(editor, 'object-state', 'h3n6', 160, 250, 300, 190, 'Figure 3 draft', {
-		color: 'light-violet',
-		fill: 'solid',
-		size: 'l',
-	})
-	createGeo(editor, 'object-state', 'j5d3', 760, 215, 340, 260, 'Review', {
-		color: 'grey',
-		fill: 'none',
-		dash: 'dashed',
-		size: 'm',
-		verticalAlign: 'start',
-	})
+function createWorkspaceZones(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	// Use native tldraw frames for consistent workspace chrome. Ordinary cards are explicitly
+	// page-parented below because the shared legacy move/place actions do not reparent across
+	// frames. The two Study setup A members are the deliberate structural exception used in Step 3.
+	createFrame(editor, caseStudyId, 'z2s8', 590, 130, 520, 320, 'Findings', 'grey')
+	createFrame(editor, caseStudyId, 'z4e6', 1160, 130, 520, 320, 'Evidence trail', 'grey')
+	createFrame(editor, caseStudyId, 'z6f3', 40, 545, 360, 230, 'Charts', 'grey')
+	createFrame(editor, caseStudyId, 'j5d3', 410, 545, 740, 230, 'Friday report', 'green')
+	createFrame(editor, caseStudyId, 'z8k2', 1160, 545, 520, 230, 'Friday checklist', 'grey')
+	createFrame(editor, caseStudyId, 'p5x1', 2200, 130, 470, 610, 'Finding versions', 'grey')
 }
 
-function createWorkspaceStructureCase(editor: Editor) {
-	const frameId = createShapeId('obs-workspace-structure-f1')
-	editor.createShape<TLFrameShape>({
-		id: frameId,
-		type: 'frame',
-		x: 100,
-		y: 140,
-		props: {
-			w: 620,
-			h: 520,
-			name: 'Methods',
-			color: 'blue',
-		},
-		meta: getShapeMeta('workspace-structure'),
-	})
+function createMethodsArea(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	const firstFrameId = createFrame(
+		editor,
+		caseStudyId,
+		'f1u6',
+		40,
+		130,
+		240,
+		320,
+		'Study setup A',
+		'blue'
+	)
+	createFrame(editor, caseStudyId, 'f2u7', 300, 130, 240, 320, 'Study setup B', 'blue')
 
-	createGeo(editor, 'workspace-structure', 'g1', 55, 100, 220, 110, 'Protocol', {
+	// All four cards form one balanced 2x2 grid inside Study setup A. The two native children
+	// occupy one diagonal; the other diagonal consists of page-level cards that only look attached.
+	createGeo(editor, caseStudyId, 'u2c7', 20, 60, 90, 90, 'Calls · 6 teams', {
 		color: 'light-blue',
 		fill: 'solid',
-		size: 'm',
-		parentId: frameId,
+		size: 's',
+		parentId: firstFrameId,
 	})
-	createGeo(editor, 'workspace-structure', 'g2', 390, 240, 220, 110, 'Budget', {
-		color: 'yellow',
-		fill: 'solid',
-		size: 'm',
-	})
-	createGeo(editor, 'workspace-structure', 'g3', 300, 315, 220, 110, 'Recruitment', {
+	createGeo(editor, caseStudyId, 'b6k4', 170, 190, 90, 90, 'Diaries · 4 teams', {
 		color: 'light-violet',
 		fill: 'solid',
-		size: 'm',
-		parentId: frameId,
+		size: 's',
 	})
-	createGeo(editor, 'workspace-structure', 'g4', 150, 475, 220, 110, 'Timeline', {
-		color: 'green',
+	createGeo(editor, caseStudyId, 'r9m1', 130, 170, 90, 90, 'Calls · 45 min', {
+		color: 'light-blue',
 		fill: 'solid',
-		size: 'm',
+		size: 's',
+		parentId: firstFrameId,
 	})
-	// Keep the two visual decoys on the page. tldraw automatically adopts shapes that are
-	// created inside a frame, so explicitly reparent them after creation while preserving their
-	// page-space positions.
+	createGeo(editor, caseStudyId, 't4v8', 60, 300, 90, 90, 'Diaries · 7 days', {
+		color: 'light-violet',
+		fill: 'solid',
+		size: 's',
+	})
+
+	// These two cards were pasted over Study setup A. They look enclosed but remain page-level.
 	editor.reparentShapes(
-		[
-			getShapeId('workspace-structure', 'g2'),
-			getShapeId('workspace-structure', 'g4'),
-		],
+		[getShapeId(caseStudyId, 'b6k4'), getShapeId(caseStudyId, 't4v8')],
 		editor.getCurrentPageId()
 	)
 }
 
-function createExplicitRelationsCase(editor: Editor) {
-	createGeo(editor, 'explicit-relations', 'g1', 100, 300, 190, 110, 'Data', {
+function createSynthesisArea(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	const pageId = editor.getCurrentPageId()
+	createGeo(editor, caseStudyId, 'd4h8', 620, 185, 210, 90, 'Handoff themes', {
+		color: 'blue',
+		fill: 'semi',
+		size: 'm',
+		parentId: pageId,
+	})
+	createGeo(
+		editor,
+		caseStudyId,
+		'q2w5',
+		850,
+		185,
+		230,
+		90,
+		'What breaks during team handoffs?',
+		{
+			color: 'light-violet',
+			fill: 'solid',
+			size: 'm',
+			parentId: pageId,
+		}
+	)
+	createGeo(
+		editor,
+		caseStudyId,
+		'q8n2',
+		620,
+		305,
+		460,
+		90,
+		'18 interviews coded · 5 recurring breakdowns',
+		{
+			color: 'light-blue',
+			fill: 'semi',
+			size: 'm',
+			parentId: pageId,
+		}
+	)
+}
+
+function createEvidenceMap(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	const pageId = editor.getCurrentPageId()
+	createGeo(editor, caseStudyId, 'e2s6', 1190, 240, 140, 95, 'Interview evidence', {
 		color: 'blue',
 		fill: 'solid',
 		size: 'm',
+		parentId: pageId,
 	})
-	createGeo(editor, 'explicit-relations', 'g2', 850, 180, 210, 110, 'Result', {
+	createGeo(editor, caseStudyId, 'q4w8', 1350, 175, 170, 95, 'Lost decision context', {
 		color: 'yellow',
 		fill: 'solid',
 		size: 'm',
+		parentId: pageId,
 	})
-	createGeo(editor, 'explicit-relations', 'g3', 850, 430, 210, 110, 'Result', {
+	createGeo(editor, caseStudyId, 'l7n3', 1350, 305, 170, 95, 'Lost decision context', {
 		color: 'yellow',
 		fill: 'solid',
 		size: 'm',
+		parentId: pageId,
 	})
-	createGeo(editor, 'explicit-relations', 'g4', 420, 580, 340, 135, 'Review', {
-		color: 'green',
-		fill: 'none',
-		dash: 'dashed',
+	createBoundArrow(editor, caseStudyId, 'a5d9', 'e2s6', 'q4w8')
+	// This loose arrow visually touches the lower finding but has no end binding.
+	createArrow(editor, caseStudyId, 'a8p2', 1330, 280, 20, 72, pageId)
+}
+
+function createFigureAlternatives(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	const pageId = editor.getCurrentPageId()
+	// Identical geometry and labels make every lower draft fully hidden by the violet top layer.
+	createGeo(editor, caseStudyId, 'v7p2', 125, 625, 190, 95, 'Handoff breakdown', {
+		color: 'orange',
+		fill: 'solid',
 		size: 'm',
+		parentId: pageId,
 	})
-	createBoundArrow(editor, 'explicit-relations', 'a1', 'g1', 'g2')
-	createArrow(editor, 'explicit-relations', 'a2', 290, 355, 560, 130)
+	createGeo(editor, caseStudyId, 'm4q8', 125, 625, 190, 95, 'Handoff breakdown', {
+		color: 'blue',
+		fill: 'solid',
+		size: 'm',
+		parentId: pageId,
+	})
+	createGeo(editor, caseStudyId, 'c9r5', 125, 625, 190, 95, 'Handoff breakdown', {
+		color: 'yellow',
+		fill: 'solid',
+		size: 'm',
+		parentId: pageId,
+	})
+	createGeo(editor, caseStudyId, 'h3n6', 125, 625, 190, 95, 'Handoff breakdown', {
+		color: 'light-violet',
+		fill: 'solid',
+		size: 'm',
+		parentId: pageId,
+	})
+}
+
+function createReviewArea(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	// Native frames keep each destination title outside its content area, so a placed card can
+	// fill the destination without covering or colliding with its label.
+	createFrame(editor, caseStudyId, 'f3r7', 420, 645, 220, 115, 'Chart', 'grey')
+	createFrame(editor, caseStudyId, 's7y3', 650, 645, 260, 115, 'Key', 'grey')
+	createFrame(editor, caseStudyId, 'c6p2', 920, 645, 220, 115, 'Claim', 'grey')
+}
+
+function createReviewChecklist(
+	editor: Editor,
+	caseStudyId: ObservationCaseStudyId,
+	completedSteps: number
+) {
+	const pageId = editor.getCurrentPageId()
+	const items = [
+		{ id: 'k1r4', x: 1190, y: 615, pending: 'Add takeaway', done: '✓ Takeaway' },
+		{ id: 'k2r5', x: 1430, y: 615, pending: 'Add chart', done: '✓ Chart' },
+		{ id: 'k3r6', x: 1190, y: 695, pending: 'Split setups', done: '✓ Setups split' },
+		{
+			id: 'k4r7',
+			x: 1430,
+			y: 695,
+			pending: 'Trace evidence',
+			done: '✓ Evidence',
+		},
+	] as const
+
+	for (const [index, item] of items.entries()) {
+		const isComplete = index < completedSteps
+		createGeo(editor, caseStudyId, item.id, item.x, item.y, 210, 65, isComplete ? item.done : item.pending, {
+			color: isComplete ? 'green' : 'grey',
+			fill: isComplete ? 'solid' : 'semi',
+			size: 'm',
+			parentId: pageId,
+		})
+	}
+}
+
+function createVersionArchive(editor: Editor, caseStudyId: ObservationCaseStudyId) {
+	const pageId = editor.getCurrentPageId()
+	// Opaque IDs and identical visible styling keep lock state as the only target discriminator.
+	createGeo(editor, caseStudyId, 'k2m9', 2315, 210, 240, 95, 'Unclear ownership delays handoffs', {
+		color: 'light-blue',
+		fill: 'solid',
+		size: 'm',
+		isLocked: true,
+		parentId: pageId,
+	})
+	createGeo(editor, caseStudyId, 'n7q4', 2315, 380, 240, 95, 'Unclear ownership delays handoffs', {
+		color: 'light-blue',
+		fill: 'solid',
+		size: 'm',
+		parentId: pageId,
+	})
+	createGeo(editor, caseStudyId, 'r8v3', 2315, 550, 240, 95, 'Unclear ownership delays handoffs', {
+		color: 'light-blue',
+		fill: 'solid',
+		size: 'm',
+		isLocked: true,
+		parentId: pageId,
+	})
+}
+
+function applyCompletedWorkflowSteps(
+	editor: Editor,
+	caseStudyId: ObservationCaseStudyId,
+	completedSteps: number
+) {
+	if (completedSteps >= 1) {
+		editor.updateShape({
+			id: getShapeId(caseStudyId, 'n7q4'),
+			type: 'geo',
+			x: 660,
+			y: 655,
+		})
+	}
+	if (completedSteps >= 2) {
+		editor.updateShape({
+			id: getShapeId(caseStudyId, 'm4q8'),
+			type: 'geo',
+			x: 435,
+			y: 655,
+		})
+	}
+	if (completedSteps >= 3) {
+		const movedCards = [
+			{ localId: 'b6k4', x: 320 },
+			{ localId: 't4v8', x: 430 },
+		] as const
+		for (const { localId, x } of movedCards) {
+			editor.updateShape({
+				id: getShapeId(caseStudyId, localId),
+				type: 'geo',
+				x,
+				y: 190,
+			})
+		}
+	}
+}
+
+function createFrame(
+	editor: Editor,
+	caseStudyId: ObservationCaseStudyId,
+	localId: string,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	name: string,
+	color: CanvasColor
+) {
+	const frameId = getShapeId(caseStudyId, localId)
+	editor.createShape<TLFrameShape>({
+		id: frameId,
+		type: 'frame',
+		parentId: editor.getCurrentPageId(),
+		x,
+		y,
+		props: { w, h, name, color },
+		meta: getShapeMeta(caseStudyId),
+	})
+	return frameId
 }
 
 function createGeo(
@@ -466,7 +656,7 @@ function createGeo(
 		verticalAlign?: 'start' | 'middle' | 'end'
 		isLocked?: boolean
 		rotation?: number
-		parentId?: TLShapeId
+		parentId?: TLParentId
 	}
 ) {
 	editor.createShape<TLGeoShape>({
@@ -495,34 +685,6 @@ function createGeo(
 	})
 }
 
-function createText(
-	editor: Editor,
-	caseStudyId: ObservationCaseStudyId,
-	localId: string,
-	x: number,
-	y: number,
-	w: number,
-	text: string,
-	options: { color: CanvasColor; size: 's' | 'm' | 'l' | 'xl' }
-) {
-	editor.createShape<TLTextShape>({
-		id: getShapeId(caseStudyId, localId),
-		type: 'text',
-		x,
-		y,
-		props: {
-			autoSize: false,
-			w,
-			color: options.color,
-			font: 'sans',
-			size: options.size,
-			textAlign: 'start',
-			richText: toRichText(text),
-		},
-		meta: getShapeMeta(caseStudyId),
-	})
-}
-
 function createArrow(
 	editor: Editor,
 	caseStudyId: ObservationCaseStudyId,
@@ -530,13 +692,15 @@ function createArrow(
 	x: number,
 	y: number,
 	dx: number,
-	dy: number
+	dy: number,
+	parentId?: TLParentId
 ) {
 	editor.createShape<TLArrowShape>({
 		id: getShapeId(caseStudyId, localId),
 		type: 'arrow',
 		x,
 		y,
+		...(parentId ? { parentId } : {}),
 		props: {
 			start: { x: 0, y: 0 },
 			end: { x: dx, y: dy },

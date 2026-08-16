@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "runId": "preflight-gpt54-mini-20260815-v1",
+  "status": "complete",
+  "startedAt": "2026-08-15T23:53:46.877Z",
+  "finishedAt": "2026-08-15T23:54:04.007Z",
+  "updatedAt": "2026-08-15T23:54:04.007Z",
+  "config": {
+    "profile": "pilot",
+    "seed": "c3938a3ae4a7ee68",
+    "url": "http://127.0.0.1:5174/?eval=1",
+    "outputDir": "/Users/jiahaoxu/Github/CanvasAct/output/playwright/canvas-observation/preflight-gpt54-mini-20260815-v1",
+    "caseIds": [
+      "viewport-coverage"
+    ],
+    "selectedCases": [
+      {
+        "id": "viewport-coverage",
+        "label": "viewport-coverage",
+        "rotations": [
+          {
+            "id": "canonical",
+            "resolvedId": "editable-middle",
+            "prompt": "Move the editable copy of “Unclear ownership delays handoffs” into the Key slot in Friday’s report."
+          }
+        ]
+      }
+    ],
+    "rotationIds": [
+      "canonical"
+    ],
+    "rotationLimit": 1,
+    "modelNames": [
+      "gpt-5.4-mini"
+    ],
+    "variants": [
+      "canvasact",
+      "original-tldraw"
+    ],
+    "repetitions": 1,
+    "bridgeName": "__canvasObsEval",
+    "bridgeMethods": {
+      "listCases": "listCases",
+      "prepareTrial": "prepareTrial",
+      "prompt": "prompt",
+      "waitForIdle": "waitForIdle",
+      "exportState": "exportState"
+    },
+    "bridgeTimeoutMs": 60000,
+    "navigationTimeoutMs": 60000,
+    "trialTimeoutMs": 180000,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "headless": true,
+    "browserChannel": "chrome",
+    "browserExecutablePath": null,
+    "startServers": false,
+    "backendPort": 5000,
+    "reloadEachTrial": true,
+    "failFast": false,
+    "screenshotMode": "after"
+  },
+  "browser": {
+    "engine": "chromium",
+    "version": "151.0.7922.138",
+    "channel": "chrome",
+    "executablePath": null,
+    "headless": true
+  },
+  "scheduledTrialCount": 2,
+  "completedTrialCount": 2
+}

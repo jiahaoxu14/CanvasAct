@@ -742,7 +742,7 @@ function buildConfigs(): EvalConfig[] {
 		},
 		{
 			id: 'canvasact_observation',
-			label: 'CanvasAct observation prompt',
+			label: 'CanvasObs observation prompt',
 			description: 'Uses CanvasObservation with the exact same primitive action set.',
 			parts: 'observation',
 			actionTypes: primitiveActions,

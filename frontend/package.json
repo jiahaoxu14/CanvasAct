@@ -5,13 +5,16 @@
 	"type": "module",
 	"scripts": {
 		"build": "vite build",
+		"analyze:canvasobs-browser": "node scripts/analyze-browser-observation-experiment.mjs",
 		"check:agent-variants": "esbuild scripts/check-agent-variants.ts --bundle --platform=node --format=esm --outfile=.tsbuild/check-agent-variants.mjs && node .tsbuild/check-agent-variants.mjs",
 		"dev": "vite",
 		"eval:canvas-agent": "esbuild scripts/run-canvas-agent-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-canvas-agent-evals.mjs && node .tsbuild/run-canvas-agent-evals.mjs",
+		"eval:canvasobs-browser": "node scripts/run-browser-observation-experiment.mjs",
 		"eval:model-in-loop": "esbuild scripts/run-model-in-loop-evals.ts --bundle --platform=node --format=esm --outfile=.tsbuild/run-model-in-loop-evals.mjs && node .tsbuild/run-model-in-loop-evals.mjs",
 		"preview": "vite preview",
 		"test:observation-case-studies": "esbuild tests/observation-case-studies.ts --bundle --platform=node --format=esm --outfile=.tsbuild/observation-case-studies.mjs && node .tsbuild/observation-case-studies.mjs",
-		"test:lifecycle-regressions": "esbuild tests/agent-lifecycle-regressions.ts --bundle --platform=node --format=esm --outfile=.tsbuild/agent-lifecycle-regressions.mjs && node .tsbuild/agent-lifecycle-regressions.mjs"
+		"test:lifecycle-regressions": "esbuild tests/agent-lifecycle-regressions.ts --bundle --platform=node --format=esm --outfile=.tsbuild/agent-lifecycle-regressions.mjs && node .tsbuild/agent-lifecycle-regressions.mjs",
+		"test:canvasobs-experiment": "esbuild tests/canvasobs-experiment-scoring.ts --bundle --platform=node --format=esm --outfile=.tsbuild/canvasobs-experiment-scoring.mjs && node .tsbuild/canvasobs-experiment-scoring.mjs"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^2.0.2",
@@ -37,6 +40,7 @@
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react-swc": "^3.10.2",
+		"playwright": "^1.62.1",
 		"typescript": "^5.8.3",
 		"vite": "^7.0.1"
 	}

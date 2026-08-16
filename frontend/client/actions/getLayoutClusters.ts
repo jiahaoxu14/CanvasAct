@@ -12,7 +12,7 @@ export interface LayoutClusterSnapshot {
 /**
  * Mirror tldraw's layout clustering: selected shapes connected through selected
  * arrow bindings move as one cluster. Capturing this before execution lets
- * CanvasAct check the same units that the host editor actually lays out.
+ * CanvasObs check the same units that the host editor actually lays out.
  */
 export function getLayoutClusters(
 	editor: Editor,

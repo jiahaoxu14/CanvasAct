@@ -1,0 +1,163 @@
+- generic [ref=e1]:
+  - application "tldraw" [ref=e3]:
+    - generic [ref=e7]:
+      - paragraph [ref=e10]: Diaries · 4 teams
+      - generic: Claim
+      - paragraph [ref=e16]: Handoff breakdown
+      - paragraph [ref=e19]: Handoff themes
+      - paragraph [ref=e22]: Interview evidence
+      - generic: Study setup A
+      - generic: Study setup B
+      - generic: Chart
+      - paragraph [ref=e34]: Handoff breakdown
+      - generic: Friday report
+      - paragraph [ref=e40]: Add takeaway
+      - paragraph [ref=e43]: Add chart
+      - paragraph [ref=e46]: Split setups
+      - paragraph [ref=e49]: Trace evidence
+      - paragraph [ref=e52]: Lost decision context
+      - paragraph [ref=e55]: Handoff breakdown
+      - paragraph [ref=e58]: What breaks during team handoffs?
+      - paragraph [ref=e61]: Lost decision context
+      - paragraph [ref=e64]: 18 interviews coded · 5 recurring breakdowns
+      - paragraph [ref=e67]: Calls · 45 min
+      - generic: Key
+      - paragraph [ref=e73]: Diaries · 7 days
+      - paragraph [ref=e76]: Calls · 6 teams
+      - paragraph [ref=e79]: Handoff breakdown
+      - generic: Findings
+      - generic: Evidence trail
+      - generic: Charts
+      - generic: Friday checklist
+    - generic:
+      - button "Move focus to canvas" [ref=e92] [cursor=pointer]
+      - generic:
+        - generic:
+          - navigation:
+            - generic:
+              - button "Menu" [ref=e93] [cursor=pointer]
+              - button "Remote Team Handoff · 01 Stage Takeaway" [ref=e95] [cursor=pointer]
+              - toolbar "Actions":
+                - button "Undo — ⌘ Z" [disabled] [ref=e98]
+                - button "Redo — ⌘ ⇧ Z" [disabled] [ref=e100]
+                - button "Delete — ⌫" [disabled] [ref=e102]
+                - button "Duplicate — ⌘ D" [disabled] [ref=e104]
+                - button "Actions" [ref=e106] [cursor=pointer]
+          - button "Restore this workflow step" [ref=e108] [cursor=pointer]:
+            - generic [ref=e109]: Reset step
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - toolbar "Color" [ref=e112]:
+              - radiogroup [ref=e113]:
+                - radio "Color — Black (selected)" [checked] [ref=e114] [cursor=pointer]
+                - radio "Color — Grey" [ref=e116] [cursor=pointer]
+                - radio "Color — Light violet" [ref=e118] [cursor=pointer]
+                - radio "Color — Violet" [ref=e120] [cursor=pointer]
+                - radio "Color — Blue" [ref=e122] [cursor=pointer]
+                - radio "Color — Light blue" [ref=e124] [cursor=pointer]
+                - radio "Color — Yellow" [ref=e126] [cursor=pointer]
+                - radio "Color — Orange" [ref=e128] [cursor=pointer]
+                - radio "Color — Green" [ref=e130] [cursor=pointer]
+                - radio "Color — Light green" [ref=e132] [cursor=pointer]
+                - radio "Color — Light red" [ref=e134] [cursor=pointer]
+                - radio "Color — Red" [ref=e136] [cursor=pointer]
+            - generic [ref=e139]:
+              - generic [ref=e140] [cursor=pointer]
+              - slider "Opacity — 100%" [ref=e143]
+          - generic [ref=e144]:
+            - toolbar "Fill" [ref=e145]:
+              - radiogroup [ref=e146]:
+                - radio "Fill — None (selected)" [checked] [ref=e147] [cursor=pointer]
+                - radio "Fill — Semi" [ref=e149] [cursor=pointer]
+                - radio "Fill — Solid" [ref=e151] [cursor=pointer]
+              - button "Fill — None" [ref=e154] [cursor=pointer]
+            - toolbar "Dash" [ref=e156]:
+              - radiogroup [ref=e157]:
+                - radio "Dash — Draw (selected)" [checked] [ref=e158] [cursor=pointer]
+                - radio "Dash — Dashed" [ref=e160] [cursor=pointer]
+                - radio "Dash — Dotted" [ref=e162] [cursor=pointer]
+                - radio "Dash — Solid" [ref=e164] [cursor=pointer]
+            - toolbar "Size" [ref=e166]:
+              - radiogroup [ref=e167]:
+                - radio "Size — Small (selected)" [checked] [ref=e168] [cursor=pointer]
+                - radio "Size — Medium" [ref=e170] [cursor=pointer]
+                - radio "Size — Large" [ref=e172] [cursor=pointer]
+                - radio "Size — Extra large" [ref=e174] [cursor=pointer]
+      - generic:
+        - generic:
+          - toolbar "Navigation" [ref=e177]:
+            - button "Zoom — 47%" [ref=e178] [cursor=pointer]:
+              - generic [ref=e179]: 47%
+            - button "Toggle minimap" [ref=e180] [cursor=pointer]
+          - toolbar "Tools" [ref=e182]:
+            - generic [ref=e183]:
+              - button "Select — V" [pressed] [ref=e184] [cursor=pointer]
+              - button "Hand — H" [ref=e186] [cursor=pointer]
+              - button "Draw — D" [ref=e188] [cursor=pointer]
+              - button "Eraser — E" [ref=e190] [cursor=pointer]
+              - button "Arrow — A" [ref=e192] [cursor=pointer]
+              - button "Text — T" [ref=e194] [cursor=pointer]
+              - button "Note — N" [ref=e196] [cursor=pointer]
+              - button "Media — ⌘ U" [ref=e198] [cursor=pointer]
+              - button "Rectangle — R" [ref=e200] [cursor=pointer]
+            - button "More" [ref=e203] [cursor=pointer]
+      - region "Notifications (F8)":
+        - list
+    - button "Get a license for production" [ref=e206] [cursor=pointer]
+  - generic [ref=e207]:
+    - generic [ref=e208]:
+      - generic [ref=e209]:
+        - generic [ref=e210]: Agent
+        - group "Agent implementation" [ref=e211]:
+          - button "CanvasObs selected. Switching starts a fresh chat and keeps the canvas." [pressed] [ref=e212] [cursor=pointer]: CanvasObs
+          - button "Switch to Original tldraw. Switching starts a fresh chat and keeps the canvas." [ref=e213] [cursor=pointer]: Original
+      - button "Start a new chat" [ref=e214] [cursor=pointer]: +
+    - generic [ref=e216]:
+      - region "Remote Team Handoff Study" [ref=e217]:
+        - generic [ref=e218]:
+          - generic [ref=e219]: Remote Team Handoff Study
+          - generic [ref=e220]: 1 / 4
+        - generic [ref=e221]:
+          - generic [ref=e222]: Step
+          - combobox "Step" [ref=e223] [cursor=pointer]:
+            - option "1. Stage the current takeaway" [selected]
+            - option "2. Stage the approved chart"
+            - option "3. Move the loose setup cards"
+            - option "4. Add the supported finding"
+        - paragraph [ref=e224]: Each step starts with the earlier report edits complete.
+        - generic [ref=e225]:
+          - generic [ref=e226]: Step 1 · Workspace coverage
+          - heading "Stage the current takeaway" [level=2] [ref=e227]
+          - paragraph [ref=e228]: To start Friday’s report, the researcher pulls in the team’s live takeaway from its saved versions.
+        - generic [ref=e229]:
+          - generic [ref=e230]:
+            - term [ref=e231]: Legacy
+            - definition [ref=e232]: The saved versions are initially anonymous, and later summaries still omit which copy is editable.
+          - generic [ref=e233]:
+            - term [ref=e234]: CanvasObs
+            - definition [ref=e235]: Each saved version retains its ID, action-space bounds, and locked state.
+        - generic [ref=e236]:
+          - generic [ref=e237]:
+            - generic [ref=e238]: Researcher’s request
+            - button "Copy" [ref=e239] [cursor=pointer]
+          - paragraph [ref=e240]: Add the current working copy of “Unclear ownership delays handoffs” to Friday’s report.
+          - button "Use prompt" [ref=e241] [cursor=pointer]
+      - generic [ref=e243]:
+        - generic [ref=e245]:
+          - generic [ref=e246]: Add Context
+          - combobox [ref=e250] [cursor=pointer]:
+            - option "Pick Shapes"
+            - option "Pick Area"
+            - option [selected]
+        - textbox "Ask, learn, brainstorm, draw" [ref=e251]
+        - generic [ref=e252]:
+          - generic [ref=e254]:
+            - generic [ref=e255]: claude-sonnet-4-5
+            - combobox [ref=e264]:
+              - option "claude-sonnet-4-5" [selected]
+              - option "claude-opus-4-5"
+              - option "gemini-3-pro-preview"
+              - option "gemini-3-flash-preview"
+              - option "gpt-5.4"
+              - option "gpt-5.4-mini"
+          - button "⬆" [disabled] [ref=e267]

@@ -49,8 +49,8 @@ function ObservationCaseStudyControls() {
 	if (!caseStudyId) return null
 
 	return (
-		<TldrawUiButton type="low" onClick={handleReset} title="Restore this case study">
-			<TldrawUiButtonLabel>Reset scenario</TldrawUiButtonLabel>
+		<TldrawUiButton type="low" onClick={handleReset} title="Restore this workflow step">
+			<TldrawUiButtonLabel>Reset step</TldrawUiButtonLabel>
 		</TldrawUiButton>
 	)
 }

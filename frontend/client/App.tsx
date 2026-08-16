@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	DefaultSizeStyle,
 	type Editor,
@@ -17,12 +17,14 @@ import {
 import { ChatPanel } from './components/ChatPanel'
 import { ChatPanelFallback } from './components/ChatPanelFallback'
 import { CustomHelperButtons } from './components/CustomHelperButtons'
+import { installCanvasObsEvalBridge } from './evals/CanvasObsEvalBridge'
 import { AgentViewportBoundsHighlights } from './components/highlights/AgentViewportBoundsHighlights'
 import { AllContextHighlights } from './components/highlights/ContextHighlights'
 import { TargetAreaTool } from './tools/TargetAreaTool'
 import { TargetShapeTool } from './tools/TargetShapeTool'
 import {
 	ensureObservationCaseStudySuite,
+	installObservationCaseStudyAutoFit,
 	OBSERVATION_CASE_STUDY_SUITE_VERSION,
 } from './usageScenario/observationCaseStudies'
 
@@ -145,6 +147,9 @@ const overrides: TLUiOverrides = {
 
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
+	const mountedAppRef = useRef<TldrawAgentApp | null>(null)
+	const caseStudyAutoFitCleanupRef = useRef<(() => void) | null>(null)
+	const evalBridgeCleanupRef = useRef<(() => void) | null>(null)
 
 	useEffect(() => {
 		void deleteLegacyCanvasSaves().catch((error) => {
@@ -153,10 +158,21 @@ function App() {
 	}, [])
 
 	const handleUnmount = useCallback(() => {
+		evalBridgeCleanupRef.current?.()
+		evalBridgeCleanupRef.current = null
+		caseStudyAutoFitCleanupRef.current?.()
+		caseStudyAutoFitCleanupRef.current = null
+		mountedAppRef.current = null
 		setApp(null)
 	}, [])
 
 	const handleMount = useCallback((mountedApp: TldrawAgentApp) => {
+		evalBridgeCleanupRef.current?.()
+		caseStudyAutoFitCleanupRef.current?.()
+		mountedAppRef.current = mountedApp
+		caseStudyAutoFitCleanupRef.current = installObservationCaseStudyAutoFit(
+			mountedApp.editor
+		)
 		deleteRemovedPrototypePages(mountedApp.editor)
 		const shouldRebuildCaseStudies =
 			window.localStorage.getItem(OBSERVATION_CASE_STUDY_MIGRATION_KEY) !==
@@ -166,6 +182,7 @@ function App() {
 			rebuild: shouldRebuildCaseStudies,
 			onFit: shouldRebuildCaseStudies
 				? () => {
+						if (mountedAppRef.current !== mountedApp) return
 						mountedApp.agents.resetAllAgents()
 						window.localStorage.setItem(
 							OBSERVATION_CASE_STUDY_MIGRATION_KEY,
@@ -175,6 +192,7 @@ function App() {
 					}
 				: undefined,
 		})
+		evalBridgeCleanupRef.current = installCanvasObsEvalBridge(mountedApp)
 		if (!shouldRebuildCaseStudies) setApp(mountedApp)
 	}, [])
 

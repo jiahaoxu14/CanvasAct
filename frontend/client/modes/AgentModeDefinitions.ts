@@ -50,7 +50,7 @@ import { UserActionHistoryPartUtil } from '../parts/UserActionHistoryPartUtil'
 import { UserViewportBoundsPartUtil } from '../parts/UserViewportBoundsPartUtil'
 
 /**
- * CanvasAct intentionally uses the same action vocabulary as the legacy agent.
+ * CanvasObs intentionally uses the same action vocabulary as the legacy agent.
  * Its sole experimental difference is the additional CanvasObservation prompt
  * part. Editing, review, linting, and response handling match the legacy agent.
  */
@@ -194,7 +194,7 @@ export const AGENT_MODE_DEFINITIONS = [
 			TimePartUtil.type,
 		],
 
-		/** CanvasAct uses the exact legacy action vocabulary and implementations. */
+		/** CanvasObs uses the exact legacy action vocabulary and implementations. */
 		actions: [...SHARED_ACTION_TYPES],
 	},
 ] as const satisfies AgentModeDefinition[]

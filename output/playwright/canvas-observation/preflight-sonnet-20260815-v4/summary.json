@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "runId": "preflight-sonnet-20260815-v4",
+  "scheduledTrials": 2,
+  "recordedTrials": 2,
+  "remainingTrials": 0,
+  "completedTrials": 2,
+  "failedTrials": 0,
+  "completePairs": 1,
+  "scoredPairs": 1,
+  "pairComparisons": {
+    "canvasact vs original-tldraw": {
+      "ties": 1,
+      "wins": {}
+    }
+  },
+  "byVariant": {
+    "original-tldraw": {
+      "trials": 1,
+      "passed": 1,
+      "failedOutcome": 0,
+      "unscored": 0,
+      "scoredTrials": 1,
+      "components": {
+        "grounding": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "geometry": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "relation": {
+          "passed": 0,
+          "evaluated": 0
+        },
+        "collateral": {
+          "passed": 1,
+          "evaluated": 1
+        }
+      },
+      "averageDurationMs": 27356,
+      "averageScore": 4
+    },
+    "canvasact": {
+      "trials": 1,
+      "passed": 1,
+      "failedOutcome": 0,
+      "unscored": 0,
+      "scoredTrials": 1,
+      "components": {
+        "grounding": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "geometry": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "relation": {
+          "passed": 0,
+          "evaluated": 0
+        },
+        "collateral": {
+          "passed": 1,
+          "evaluated": 1
+        }
+      },
+      "averageDurationMs": 14227,
+      "averageScore": 4
+    }
+  },
+  "byCaseAndVariant": {
+    "viewport-coverage::original-tldraw": {
+      "trials": 1,
+      "passed": 1,
+      "failedOutcome": 0,
+      "unscored": 0,
+      "scoredTrials": 1,
+      "components": {
+        "grounding": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "geometry": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "relation": {
+          "passed": 0,
+          "evaluated": 0
+        },
+        "collateral": {
+          "passed": 1,
+          "evaluated": 1
+        }
+      },
+      "averageDurationMs": 27356,
+      "averageScore": 4
+    },
+    "viewport-coverage::canvasact": {
+      "trials": 1,
+      "passed": 1,
+      "failedOutcome": 0,
+      "unscored": 0,
+      "scoredTrials": 1,
+      "components": {
+        "grounding": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "geometry": {
+          "passed": 1,
+          "evaluated": 1
+        },
+        "relation": {
+          "passed": 0,
+          "evaluated": 0
+        },
+        "collateral": {
+          "passed": 1,
+          "evaluated": 1
+        }
+      },
+      "averageDurationMs": 14227,
+      "averageScore": 4
+    }
+  }
+}

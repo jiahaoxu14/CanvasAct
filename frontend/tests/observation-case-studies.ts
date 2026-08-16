@@ -13,6 +13,7 @@ import type { TLPage, TLShape } from 'tldraw'
 import {
 	ensureObservationCaseStudySuite,
 	getCurrentObservationCaseStudy,
+	installObservationCaseStudyAutoFit,
 	OBSERVATION_CASE_STUDIES,
 	OBSERVATION_CASE_STUDY_SUITE_ID,
 	OBSERVATION_CASE_STUDY_SUITE_VERSION,
@@ -29,6 +30,7 @@ import {
 } from '../shared/schema/PromptPartDefinitions'
 
 type Test = { name: string; run: () => void | Promise<void> }
+type TestViewport = { x: number; y: number; w: number; h: number }
 
 const FORBIDDEN_SHAPE_META_KEYS = [
 	'canvasActWorkspaceRole',
@@ -37,6 +39,106 @@ const FORBIDDEN_SHAPE_META_KEYS = [
 	'canvasActWorkspaceLayout',
 	'canvasActScenarioRole',
 	'note',
+] as const
+
+const STEP_4_REQUIRED_VISIBLE_IDS = [
+	'f1u6',
+	'f2u7',
+	'z2s8',
+	'z4e6',
+	'z6f3',
+	'j5d3',
+	'z8k2',
+	'e2s6',
+	'q4w8',
+	'l7n3',
+	'c6p2',
+] as const
+
+const NATIVE_WORKSPACE_FRAMES = {
+	f1u6: 'Study setup A',
+	f2u7: 'Study setup B',
+	z2s8: 'Findings',
+	z4e6: 'Evidence trail',
+	z6f3: 'Charts',
+	j5d3: 'Friday report',
+	z8k2: 'Friday checklist',
+	p5x1: 'Finding versions',
+	f3r7: 'Chart',
+	s7y3: 'Key',
+	c6p2: 'Claim',
+} as const
+
+const EXPECTED_WORKSPACE_LABELS = [
+	'Calls · 6 teams',
+	'Diaries · 4 teams',
+	'Calls · 45 min',
+	'Diaries · 7 days',
+	'Handoff themes',
+	'What breaks during team handoffs?',
+	'18 interviews coded · 5 recurring breakdowns',
+	'Interview evidence',
+	'Lost decision context',
+	'Unclear ownership delays handoffs',
+	'Handoff breakdown',
+	'Chart',
+	'Key',
+	'Claim',
+] as const
+
+const CHECKLIST_ITEMS = [
+	{ id: 'k1r4', pending: 'Add takeaway', done: '✓ Takeaway' },
+	{ id: 'k2r5', pending: 'Add chart', done: '✓ Chart' },
+	{ id: 'k3r6', pending: 'Split setups', done: '✓ Setups split' },
+	{ id: 'k4r7', pending: 'Trace evidence', done: '✓ Evidence' },
+] as const
+
+const EXPECTED_CASE_PROMPTS = [
+	'Add the current working copy of “Unclear ownership delays handoffs” to Friday’s report.',
+	'The team chose the blue “Handoff breakdown” chart. Add it to Friday’s report.',
+	'Move the two unattached cards from “Study setup A” to the empty “Study setup B”.',
+	'Move the interview-backed “Lost decision context” finding to Friday’s report.',
+] as const
+
+const RETIRED_WORKSPACE_LABELS = [
+	'Wave 3 finding',
+	'Figure 3 draft',
+	'Analysis & synthesis',
+	'Evidence map',
+	'Figure alternatives',
+	'Friday review',
+	'Review checklist',
+	'Version archive',
+	'Interview protocol',
+	'Participant budget',
+	'Recruitment plan',
+	'IRB deadline',
+	'RQ:',
+	'Quote bank',
+	'Result: context loss',
+	'What gets lost during handoffs?',
+	'Finding for report',
+	'18 coded interviews',
+	'Handoff finding draft',
+	'Handoff chart draft',
+	'Selected chart',
+	'Supported finding',
+	'Trace to interviews',
+	'Choose chart',
+	'Check study setup',
+	'Confirm supported finding',
+	'Ownership notes',
+	'Timing notes',
+	'Channel notes',
+	'Context notes',
+	'Decision ownership is unclear',
+	'6 remote teams',
+	'45-min interviews',
+	'Live + async sessions',
+	'Decisions lack clear owners',
+	'45-min calls',
+	'Live + async',
+	'3 time zones',
 ] as const
 
 installHeadlessDom()
@@ -63,6 +165,10 @@ const tests: Test[] = [
 					'explicit-relations',
 				]
 			)
+			assert.deepEqual(
+				OBSERVATION_CASE_STUDIES.map((caseStudy) => caseStudy.prompt),
+				EXPECTED_CASE_PROMPTS
+			)
 			assert.ok(OBSERVATION_CASE_STUDY_SUITE_VERSION.length > 0)
 			assert.equal(
 				OBSERVATION_CASE_STUDIES.some(
@@ -74,6 +180,11 @@ const tests: Test[] = [
 				assert.ok(caseStudy.prompt.trim().length > 0)
 				assert.ok(caseStudy.prompt.length < 180)
 				assert.ok(caseStudy.title.trim().length > 0)
+				assert.ok(caseStudy.story.trim().length > 0)
+				assert.equal(caseStudy.completedBefore, index)
+				assert.ok(caseStudy.viewWidth >= 1200)
+				assert.equal(caseStudy.viewX, 20)
+				assert.equal(caseStudy.viewWidth, 1680)
 				assert.ok(
 					caseStudy.pageName.includes(`· ${String(index + 1).padStart(2, '0')} `),
 					`${caseStudy.id} should have a sequential page number`
@@ -105,6 +216,61 @@ const tests: Test[] = [
 
 					const shapes = getPageShapes(editor, page)
 					assert.ok(shapes.length > 0, `${definition.id} should not be empty`)
+					for (const shape of shapes) {
+						if (shape.type === 'geo') {
+							assert.equal(shape.props.growY, 0, `${shape.id} should not auto-grow its label`)
+						}
+					}
+					const serializedProps = JSON.stringify(shapes.map((shape) => shape.props))
+					for (const label of EXPECTED_WORKSPACE_LABELS) {
+						assert.ok(serializedProps.includes(label), `Missing workspace label: ${label}`)
+					}
+					for (const label of RETIRED_WORKSPACE_LABELS) {
+						assert.equal(serializedProps.includes(label), false, `Retired label remains: ${label}`)
+					}
+					for (const [localId, expectedName] of Object.entries(NATIVE_WORKSPACE_FRAMES)) {
+						const frame = editor.getShape(createShapeId(`obs-${definition.id}-${localId}`))
+						assert.equal(frame?.type, 'frame', `${localId} should be a native frame`)
+						if (frame?.type !== 'frame') continue
+						assert.equal(frame.props.name, expectedName)
+						assert.equal(frame.parentId, page.id)
+					}
+					assertStudySetupFrames(editor, definition.id, definition.completedBefore >= 3)
+					assertCompactVerticalLayout(editor, definition.id)
+					for (const [index, item] of CHECKLIST_ITEMS.entries()) {
+						const checklistShape = editor.getShape(
+							createShapeId(`obs-${definition.id}-${item.id}`)
+						)
+						assert.ok(checklistShape, `Missing checklist item ${item.id}`)
+						const isComplete = index < definition.completedBefore
+						assert.equal(
+							getShapeText(editor, checklistShape),
+							isComplete ? item.done : item.pending
+						)
+						assert.equal(
+							(checklistShape.props as { color?: string }).color,
+							isComplete ? 'green' : 'grey'
+						)
+						assert.equal(
+							(checklistShape.props as { fill?: string }).fill,
+							isComplete ? 'solid' : 'semi'
+						)
+					}
+
+					const setupAId = createShapeId(`obs-${definition.id}-f1u6`)
+					for (const localId of ['u2c7', 'r9m1']) {
+						assert.equal(
+							editor.getShape(createShapeId(`obs-${definition.id}-${localId}`))?.parentId,
+							setupAId
+						)
+					}
+					for (const localId of ['b6k4', 't4v8', 'n7q4', 'm4q8', 'q4w8']) {
+						assert.equal(
+							editor.getShape(createShapeId(`obs-${definition.id}-${localId}`))?.parentId,
+							page.id,
+							`${localId} must stay page-parented for shared move/place actions`
+						)
+					}
 					for (const shape of shapes) {
 						allShapeIds.push(shape.id)
 						assert.equal(shape.meta.canvasActUsageScenarioId, definition.id)
@@ -249,7 +415,7 @@ const tests: Test[] = [
 				})
 				assert.equal(ensuredViewport, null)
 				await new Promise<void>((resolve) => setTimeout(resolve, 0))
-				assert.deepEqual(ensuredViewport, { x: 0, y: 0, w: 1200, h: 800 })
+				assertViewportJsonContains(ensuredViewport, new Box(20, 0, 1680, 800))
 
 				editor.setCamera({ x: -320, y: -180, z: 1.5 })
 				let selectedViewport: ReturnType<Box['toJson']> | null = null
@@ -258,7 +424,17 @@ const tests: Test[] = [
 				})
 				assert.equal(selectedViewport, null)
 				await new Promise<void>((resolve) => setTimeout(resolve, 0))
-				assert.deepEqual(selectedViewport, { x: 0, y: 0, w: 1200, h: 800 })
+				assertViewportJsonContains(selectedViewport, new Box(20, 0, 1680, 800))
+
+				const relationStep = OBSERVATION_CASE_STUDIES[3]
+				editor.setCamera({ x: -80, y: -40, z: 0.75 })
+				let relationViewport: ReturnType<Box['toJson']> | null = null
+				selectObservationCaseStudy(editor, relationStep.id, () => {
+					relationViewport = editor.getViewportPageBounds().toJson()
+				})
+				assert.equal(relationViewport, null)
+				await new Promise<void>((resolve) => setTimeout(resolve, 0))
+				assertViewportJsonContains(relationViewport, new Box(20, 0, 1680, 800))
 
 				editor.setCamera({ x: -510, y: -260, z: 2 })
 				let resetViewport: ReturnType<Box['toJson']> | null = null
@@ -267,7 +443,180 @@ const tests: Test[] = [
 				})
 				assert.equal(resetViewport, null)
 				await new Promise<void>((resolve) => setTimeout(resolve, 0))
-				assert.deepEqual(resetViewport, { x: 0, y: 0, w: 1200, h: 800 })
+				assertViewportJsonContains(resetViewport, new Box(20, 0, 1680, 800))
+			})
+		},
+	},
+	{
+		name: 'canonical camera fits the complete study view across viewport aspect ratios',
+		async run() {
+			for (const viewport of [
+				{ x: 0, y: 0, w: 1090, h: 900 },
+				{ x: 0, y: 0, w: 2210, h: 1440 },
+				{ x: 0, y: 0, w: 768, h: 400 },
+			]) {
+				await withEditor(
+					async (editor) => {
+						ensureObservationCaseStudySuite(editor)
+						for (const definition of OBSERVATION_CASE_STUDIES) {
+							await new Promise<void>((resolve) =>
+								selectObservationCaseStudy(editor, definition.id, resolve)
+							)
+
+							const inset = Math.min(editor.options.zoomToFitPadding, viewport.w * 0.28)
+							const expectedZoom = Math.min(
+								(viewport.w - inset) / definition.viewWidth,
+								(viewport.h - inset) / 800
+							)
+							assertClose(editor.getZoomLevel(), expectedZoom, 'canonical zoom')
+							assertViewportContains(
+								editor.getViewportPageBounds(),
+								new Box(definition.viewX, 0, definition.viewWidth, 800)
+							)
+						}
+
+						await new Promise<void>((resolve) =>
+							selectObservationCaseStudy(editor, 'explicit-relations', resolve)
+						)
+						assertStep4WorkspaceVisible(editor)
+
+						await new Promise<void>((resolve) =>
+							selectObservationCaseStudy(editor, 'viewport-coverage', resolve)
+						)
+						const archive = editor.getShapePageBounds(
+							createShapeId('obs-viewport-coverage-n7q4')
+						)
+						assert.ok(archive)
+						assert.ok(
+							editor.getViewportPageBounds().maxX < archive.minX,
+							'archive candidates must remain offscreen in Step 1'
+						)
+					},
+					viewport
+				)
+			}
+		},
+	},
+	{
+		name: 'active workflow camera refits after the canvas resizes',
+		async run() {
+			const viewport = { x: 0, y: 0, w: 1200, h: 800 }
+			await withEditor(
+				async (editor) => {
+					await new Promise<void>((resolve) =>
+						ensureObservationCaseStudySuite(editor, { onFit: resolve })
+					)
+					const uninstall = installObservationCaseStudyAutoFit(editor)
+					try {
+						viewport.w = 768
+						viewport.h = 400
+						editor.updateViewportScreenBounds(new Box(0, 0, viewport.w, viewport.h))
+						await new Promise<void>((resolve) => setTimeout(resolve, 10))
+
+						assertClose(editor.getZoomLevel(), 0.34, 'resized zoom')
+						assertViewportContains(
+							editor.getViewportPageBounds(),
+							new Box(20, 0, 1680, 800)
+						)
+					} finally {
+						uninstall()
+					}
+				},
+				viewport
+			)
+		},
+	},
+	{
+		name: 'four steps are cumulative checkpoints of one shared research workspace',
+		async run() {
+			await withEditor(async (editor) => {
+				ensureObservationCaseStudySuite(editor)
+				const inventories: string[][] = []
+				const geometries: Array<Record<string, ReturnType<Box['toJson']>>> = []
+
+				for (const definition of OBSERVATION_CASE_STUDIES) {
+					selectObservationCaseStudy(editor, definition.id)
+					const prefix = `shape:obs-${definition.id}-`
+					inventories.push(
+						getPageShapes(editor, editor.getCurrentPage())
+							.map((shape) => {
+								assert.ok(shape.id.startsWith(prefix))
+								return `${shape.type}:${shape.id.slice(prefix.length)}`
+							})
+							.sort()
+					)
+					geometries.push(getLogicalGeometry(editor, definition.id))
+				}
+
+				for (const inventory of inventories.slice(1)) {
+					assert.deepEqual(inventory, inventories[0])
+				}
+				assert.deepEqual(changedGeometryIds(geometries[0], geometries[1]), ['n7q4'])
+				assert.deepEqual(changedGeometryIds(geometries[1], geometries[2]), ['m4q8'])
+				assert.deepEqual(changedGeometryIds(geometries[2], geometries[3]), [
+					'b6k4',
+					't4v8',
+				])
+
+				selectObservationCaseStudy(editor, 'viewport-coverage')
+				assertBounds(editor, 'viewport-coverage', 'n7q4', 2315, 380)
+				assertBounds(editor, 'viewport-coverage', 'm4q8', 125, 625)
+				assertBounds(editor, 'viewport-coverage', 'u2c7', 60, 190)
+				assertBounds(editor, 'viewport-coverage', 'r9m1', 170, 300)
+				assertBounds(editor, 'viewport-coverage', 'b6k4', 170, 190)
+				assertBounds(editor, 'viewport-coverage', 't4v8', 60, 300)
+
+				selectObservationCaseStudy(editor, 'object-state')
+				assertBounds(editor, 'object-state', 'n7q4', 660, 655)
+				assertBounds(editor, 'object-state', 'm4q8', 125, 625)
+				assertBounds(editor, 'object-state', 'u2c7', 60, 190)
+				assertShapeContained(editor, 'object-state', 'n7q4', 's7y3')
+				assertShapeInset(editor, 'object-state', 'n7q4', 's7y3', 10)
+
+				selectObservationCaseStudy(editor, 'workspace-structure')
+				assertBounds(editor, 'workspace-structure', 'n7q4', 660, 655)
+				assertBounds(editor, 'workspace-structure', 'm4q8', 435, 655)
+				assertBounds(editor, 'workspace-structure', 'u2c7', 60, 190)
+				assertBounds(editor, 'workspace-structure', 'r9m1', 170, 300)
+				assertShapeContained(editor, 'workspace-structure', 'n7q4', 's7y3')
+				assertShapeContained(editor, 'workspace-structure', 'm4q8', 'f3r7')
+				assertShapeInset(editor, 'workspace-structure', 'n7q4', 's7y3', 10)
+				assertShapeInset(editor, 'workspace-structure', 'm4q8', 'f3r7', 10)
+
+				selectObservationCaseStudy(editor, 'explicit-relations')
+				assertBounds(editor, 'explicit-relations', 'n7q4', 660, 655)
+				assertBounds(editor, 'explicit-relations', 'm4q8', 435, 655)
+				assertBounds(editor, 'explicit-relations', 'u2c7', 60, 190)
+				assertBounds(editor, 'explicit-relations', 'r9m1', 170, 300)
+				assertBounds(editor, 'explicit-relations', 'b6k4', 320, 190)
+				assertBounds(editor, 'explicit-relations', 't4v8', 430, 190)
+				assertShapeContained(editor, 'explicit-relations', 'n7q4', 's7y3')
+				assertShapeContained(editor, 'explicit-relations', 'm4q8', 'f3r7')
+				assertShapeContained(editor, 'explicit-relations', 'b6k4', 'f2u7')
+				assertShapeContained(editor, 'explicit-relations', 't4v8', 'f2u7')
+				assertShapeInset(editor, 'explicit-relations', 'n7q4', 's7y3', 10)
+				assertShapeInset(editor, 'explicit-relations', 'm4q8', 'f3r7', 10)
+				assertShapeInset(editor, 'explicit-relations', 'b6k4', 'f2u7', 20)
+				assertShapeInset(editor, 'explicit-relations', 't4v8', 'f2u7', 20)
+				assertShapesDoNotOverlap(editor, 'explicit-relations', 'b6k4', 't4v8')
+
+				const setupColors = {
+					u2c7: 'light-blue',
+					r9m1: 'light-blue',
+					b6k4: 'light-violet',
+					t4v8: 'light-violet',
+				} as const
+				for (const [localId, expectedColor] of Object.entries(setupColors)) {
+					const before = editor.getShape(createShapeId(`obs-workspace-structure-${localId}`))
+					const after = editor.getShape(createShapeId(`obs-explicit-relations-${localId}`))
+					assert.ok(before && after)
+					assert.equal(
+						(before.props as { color?: string }).color,
+						expectedColor,
+						`${localId} should use its setup's color`
+					)
+					assert.equal((after.props as { color?: string }).color, expectedColor)
+				}
 			})
 		},
 	},
@@ -289,7 +638,11 @@ const tests: Test[] = [
 				)
 				assert.deepEqual(
 					viewportCandidates.map((candidate) => candidate.text),
-					['Q3 Result', 'Q3 Result', 'Q3 Result']
+					[
+						'Unclear ownership delays handoffs',
+						'Unclear ownership delays handoffs',
+						'Unclear ownership delays handoffs',
+					]
 				)
 				assert.deepEqual(
 					viewportCandidates.map((candidate) => candidate.flags.locked),
@@ -297,23 +650,23 @@ const tests: Test[] = [
 				)
 
 				const legacyBeforeNavigation = getLegacyRepresentations(editor)
-				assert.equal(legacyBeforeNavigation.peripheralClusters.length, 1)
-				assert.equal(legacyBeforeNavigation.peripheralClusters[0].numberOfShapes, 4)
 				assert.equal(
-					legacyBeforeNavigation.blurryShapes.some((shape) => shape.text === 'Q3 Result'),
+					legacyBeforeNavigation.blurryShapes.some(
+						(shape) => shape.text === 'Unclear ownership delays handoffs'
+					),
 					false
 				)
 				const serializedPeripheral = JSON.stringify(
 					legacyBeforeNavigation.peripheralClusters
 				)
-				for (const opaqueId of ['d4h8', 'p5x1', 'n7q4', 'k2m9', 'r8v3']) {
+				for (const opaqueId of ['n7q4', 'k2m9', 'r8v3']) {
 					assert.equal(serializedPeripheral.includes(opaqueId), false)
 				}
 				assert.equal(serializedPeripheral.includes('locked'), false)
 
 				// Simulate the legacy agent navigating right to inspect the anonymous cluster.
 				// The candidates then enter its blurry summaries, but lock state remains absent.
-				editor.setCamera({ x: -1200, y: 0, z: 1 })
+				editor.setCamera({ x: -2200, y: 0, z: 1 })
 				const legacyAfterNavigation = getLegacyRepresentations(editor)
 				const legacyCandidates = legacyAfterNavigation.blurryShapes
 					.filter((shape) =>
@@ -332,7 +685,11 @@ const tests: Test[] = [
 				)
 				assert.deepEqual(
 					legacyCandidates.map((shape) => shape.text),
-					['Q3 Result', 'Q3 Result', 'Q3 Result']
+					[
+						'Unclear ownership delays handoffs',
+						'Unclear ownership delays handoffs',
+						'Unclear ownership delays handoffs',
+					]
 				)
 				assert.equal(JSON.stringify(legacyCandidates).includes('locked'), false)
 
@@ -373,8 +730,7 @@ const tests: Test[] = [
 					stackIds.includes(shape.shapeId)
 				)
 				assert.equal(legacyStack.length, 4)
-				assert.ok(legacyStack.every((shape) => shape.text === 'Figure 3 draft'))
-				assert.equal(objectStateLegacy.peripheralClusters.length, 0)
+				assert.ok(legacyStack.every((shape) => shape.text === 'Handoff breakdown'))
 				const serializedLegacyStack = JSON.stringify(legacyStack)
 				for (const omittedField of ['color', 'zIndex', 'visibility', 'occluded']) {
 					assert.equal(serializedLegacyStack.includes(omittedField), false)
@@ -409,7 +765,9 @@ const tests: Test[] = [
 				assert.deepEqual(legacyPromptAfterColorSwap, legacyPromptBeforeColorSwap)
 				const swappedObservation = observeCurrentCaseStudy(editor)
 				assert.equal(
-					swappedObservation.objects.find((object) => object.style.color === 'blue')?.id,
+					swappedObservation.objects.find(
+						(object) => stackIds.includes(object.id) && object.style.color === 'blue'
+					)?.id,
 					'obs-object-state-v7p2'
 				)
 
@@ -478,22 +836,139 @@ const tests: Test[] = [
 				const frameMembers = workspaceStructure.relations.filter(
 					(relation) =>
 						relation.type === 'frame-member' &&
-						relation.sourceId === 'obs-workspace-structure-f1'
+						relation.sourceId === 'obs-workspace-structure-f1u6'
 				)
 				assert.deepEqual(
 					new Set(frameMembers.map((relation) => relation.targetId)),
-					new Set(['obs-workspace-structure-g1', 'obs-workspace-structure-g3'])
+					new Set([
+						'obs-workspace-structure-u2c7',
+						'obs-workspace-structure-r9m1',
+					])
+				)
+				for (const looseId of [
+					'obs-workspace-structure-b6k4',
+					'obs-workspace-structure-t4v8',
+				]) {
+					assert.equal(
+						frameMembers.some((relation) => relation.targetId === looseId),
+						false
+					)
+				}
+				assert.equal(
+					workspaceStructure.relations.some(
+						(relation) =>
+							relation.type === 'frame-member' &&
+							relation.sourceId === 'obs-workspace-structure-f2u7'
+					),
+					false,
+					'Study setup B should begin empty'
 				)
 
+				const structureLegacy = getLegacyRepresentations(editor)
+				const setupIds = [
+					'obs-workspace-structure-u2c7',
+					'obs-workspace-structure-b6k4',
+					'obs-workspace-structure-r9m1',
+					'obs-workspace-structure-t4v8',
+				]
+				const legacySetupNotes = structureLegacy.blurryShapes.filter((shape) =>
+					setupIds.includes(shape.shapeId)
+				)
+				assert.equal(legacySetupNotes.length, 4)
+				for (const omittedField of ['parentId', 'frameId', 'frame-member', 'color']) {
+					assert.equal(JSON.stringify(legacySetupNotes).includes(omittedField), false)
+				}
+				const expectedSetupColors = {
+					u2c7: 'light-blue',
+					r9m1: 'light-blue',
+					b6k4: 'light-violet',
+					t4v8: 'light-violet',
+				} as const
+				for (const [localId, expectedColor] of Object.entries(expectedSetupColors)) {
+					assert.equal(
+						(
+							editor.getShape(createShapeId(`obs-workspace-structure-${localId}`))
+								?.props as { color?: string } | undefined
+						)?.color,
+						expectedColor
+					)
+					assert.equal(
+						getObject(workspaceStructure, `obs-workspace-structure-${localId}`).style.color,
+						expectedColor
+					)
+				}
+
 				const explicitRelations = await observeCaseStudy(editor, 'explicit-relations')
+				assert.deepEqual(
+					explicitRelations.objects
+						.filter((object) => object.text === 'Lost decision context')
+						.map((object) => object.id)
+						.sort(),
+					['obs-explicit-relations-l7n3', 'obs-explicit-relations-q4w8']
+				)
+				assert.deepEqual(
+					new Set(
+						getPageShapes(editor, editor.getCurrentPage())
+						.filter((shape) => shape.type === 'arrow')
+						.map((shape) => shape.id)
+					),
+					new Set([
+						createShapeId('obs-explicit-relations-a5d9'),
+						createShapeId('obs-explicit-relations-a8p2'),
+					])
+				)
+				const evidenceBounds = editor.getShapePageBounds(
+					createShapeId('obs-explicit-relations-e2s6')
+				)
+				const upperFindingBounds = editor.getShapePageBounds(
+					createShapeId('obs-explicit-relations-q4w8')
+				)
+				const lowerFindingBounds = editor.getShapePageBounds(
+					createShapeId('obs-explicit-relations-l7n3')
+				)
+				assert.ok(evidenceBounds && upperFindingBounds && lowerFindingBounds)
+				assert.equal(upperFindingBounds.x, lowerFindingBounds.x)
+				assert.equal(upperFindingBounds.h, lowerFindingBounds.h)
+				assert.equal(
+					evidenceBounds.midY,
+					(upperFindingBounds.midY + lowerFindingBounds.midY) / 2
+				)
 				const connectedResults = explicitRelations.relations.filter(
 					(relation) =>
 						relation.type === 'arrow-connects' &&
-						relation.sourceId === 'obs-explicit-relations-g1'
+						relation.sourceId === 'obs-explicit-relations-e2s6'
 				)
 				assert.deepEqual(
 					connectedResults.map((relation) => relation.targetId),
-					['obs-explicit-relations-g2']
+					['obs-explicit-relations-q4w8']
+				)
+
+				const connectedFindingId = createShapeId('obs-explicit-relations-q4w8')
+				const boundArrowId = createShapeId('obs-explicit-relations-a5d9')
+				editor.updateShape({
+					id: connectedFindingId,
+					type: 'geo',
+					x: 945,
+					y: 655,
+				})
+				assertBounds(editor, 'explicit-relations', 'q4w8', 945, 655)
+				assertShapeContained(editor, 'explicit-relations', 'q4w8', 'c6p2')
+				assertShapeInset(editor, 'explicit-relations', 'q4w8', 'c6p2', 10)
+				assert.ok(
+					editor
+						.getBindingsFromShape(boundArrowId, 'arrow')
+						.some((binding) => binding.toId === connectedFindingId),
+					'bound evidence arrow should remain attached after moving the finding'
+				)
+				const completedObservation = observeCurrentCaseStudy(editor)
+				assert.ok(
+					completedObservation.relations.some(
+						(relation) =>
+							relation.type === 'arrow-connects' &&
+							relation.sourceId === 'obs-explicit-relations-e2s6' &&
+							relation.targetId === 'obs-explicit-relations-q4w8'
+					),
+					'CanvasObservation should retain the evidence-to-finding relation after the move'
 				)
 			})
 		},
@@ -528,6 +1003,8 @@ const tests: Test[] = [
 						timestamp: '2026-01-01T00:00:00.000Z',
 					})
 					assert.deepEqual(rawObservation.promptOrigin, promptOrigin)
+					assert.ok(rawObservation.objects.length < 180)
+					assert.ok(rawObservation.relations.length < 700)
 
 					const modelObservation = buildPromptCanvasObservation(rawObservation)
 					assert.equal(modelObservation.coordinateSpace, 'prompt/action coordinates')
@@ -650,24 +1127,35 @@ const tests: Test[] = [
 									modelObservation.relations
 										.filter(
 											(relation) =>
-												relation.type === 'frame-member' &&
-												relation.sourceId === 'obs-workspace-structure-f1'
-										)
-										.map((relation) => relation.targetId)
-								),
-								new Set(['obs-workspace-structure-g1', 'obs-workspace-structure-g3'])
-							)
-							break
+										relation.type === 'frame-member' &&
+										relation.sourceId === 'obs-workspace-structure-f1u6'
+									)
+									.map((relation) => relation.targetId)
+							),
+							new Set([
+								'obs-workspace-structure-u2c7',
+								'obs-workspace-structure-r9m1',
+							])
+						)
+						assert.equal(
+							modelObservation.relations.some(
+								(relation) =>
+									relation.type === 'frame-member' &&
+									relation.sourceId === 'obs-workspace-structure-f2u7'
+							),
+							false
+						)
+						break
 						case 'explicit-relations':
 							assert.deepEqual(
 								modelObservation.relations
 									.filter(
 										(relation) =>
-											relation.type === 'arrow-connects' &&
-											relation.sourceId === 'obs-explicit-relations-g1'
+										relation.type === 'arrow-connects' &&
+										relation.sourceId === 'obs-explicit-relations-e2s6'
 									)
 									.map((relation) => relation.targetId),
-								['obs-explicit-relations-g2']
+								['obs-explicit-relations-q4w8']
 							)
 							break
 					}
@@ -724,11 +1212,6 @@ function getPageShapes(editor: Editor, page: TLPage) {
 function snapshotPage(editor: Editor, page: TLPage) {
 	const shapes = getPageShapes(editor, page)
 	const shapeIds = new Set(shapes.map((shape) => shape.id))
-	const zOrder = new Map(
-		[...shapes]
-			.sort((a, b) => a.index.localeCompare(b.index))
-			.map((shape, index) => [shape.id, index])
-	)
 	const bindings = new Map<string, unknown>()
 	for (const shape of shapes) {
 		for (const binding of editor.getBindingsInvolvingShape(shape.id)) {
@@ -756,7 +1239,6 @@ function snapshotPage(editor: Editor, page: TLPage) {
 			id: shape.id,
 			type: shape.type,
 			parentId: shape.parentId,
-			zOrder: zOrder.get(shape.id),
 			x: shape.x,
 			y: shape.y,
 			rotation: shape.rotation,
@@ -769,6 +1251,240 @@ function snapshotPage(editor: Editor, page: TLPage) {
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(([, binding]) => binding),
 	})
+}
+
+function assertStudySetupFrames(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id'],
+	expectMoveComplete: boolean
+) {
+	const setupABounds = editor.getShapePageBounds(createShapeId(`obs-${caseStudyId}-f1u6`))
+	const setupBBounds = editor.getShapePageBounds(createShapeId(`obs-${caseStudyId}-f2u7`))
+	assert.ok(setupABounds, `Expected ${caseStudyId}/f1u6`)
+	assert.ok(setupBBounds, `Expected ${caseStudyId}/f2u7`)
+	assert.deepEqual(setupABounds.toJson(), { x: 40, y: 130, w: 240, h: 320 })
+	assert.deepEqual(setupBBounds.toJson(), { x: 300, y: 130, w: 240, h: 320 })
+
+	const cards = Object.fromEntries(
+		['u2c7', 'b6k4', 'r9m1', 't4v8'].map((localId) => {
+		const bounds = editor.getShapePageBounds(createShapeId(`obs-${caseStudyId}-${localId}`))
+		assert.ok(bounds, `Expected ${caseStudyId}/${localId}`)
+		assert.equal(bounds.w, 90)
+		assert.equal(bounds.h, 90)
+		return [localId, bounds]
+		})
+	) as Record<string, Box>
+
+	assert.deepEqual(cards.u2c7.toJson(), { x: 60, y: 190, w: 90, h: 90 })
+	assert.deepEqual(cards.r9m1.toJson(), { x: 170, y: 300, w: 90, h: 90 })
+
+	if (!expectMoveComplete) {
+		assert.deepEqual(cards.b6k4.toJson(), { x: 170, y: 190, w: 90, h: 90 })
+		assert.deepEqual(cards.t4v8.toJson(), { x: 60, y: 300, w: 90, h: 90 })
+		for (const bounds of Object.values(cards)) {
+			assert.equal(setupABounds.contains(bounds), true)
+			assert.equal(setupBBounds.contains(bounds), false)
+		}
+		assert.equal(cards.b6k4.minX - cards.u2c7.maxX, 20)
+		assert.equal(cards.t4v8.minY - cards.u2c7.maxY, 20)
+		assert.equal(cards.u2c7.minX - setupABounds.minX, 20)
+		assert.equal(setupABounds.maxX - cards.b6k4.maxX, 20)
+		return
+	}
+
+	assert.deepEqual(cards.b6k4.toJson(), { x: 320, y: 190, w: 90, h: 90 })
+	assert.deepEqual(cards.t4v8.toJson(), { x: 430, y: 190, w: 90, h: 90 })
+	for (const bounds of [cards.u2c7, cards.r9m1]) {
+		assert.equal(setupABounds.contains(bounds), true)
+	}
+	for (const bounds of [cards.b6k4, cards.t4v8]) {
+		assert.equal(setupBBounds.contains(bounds), true)
+	}
+	assert.equal(cards.t4v8.minX - cards.b6k4.maxX, 20)
+}
+
+function assertCompactVerticalLayout(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id']
+) {
+	const getBounds = (localId: string) => {
+		const bounds = editor.getShapePageBounds(
+			createShapeId(`obs-${caseStudyId}-${localId}`)
+		)
+		assert.ok(bounds, `Expected ${caseStudyId}/${localId}`)
+		return bounds
+	}
+
+	const topRowBottom = Math.max(
+		...['f1u6', 'f2u7', 'z2s8', 'z4e6'].map((localId) => getBounds(localId).maxY)
+	)
+	const bottomRowTop = Math.min(
+		...['z6f3', 'j5d3', 'z8k2'].map((localId) => getBounds(localId).minY)
+	)
+	assert.equal(
+		bottomRowTop - topRowBottom,
+		95,
+		`${caseStudyId} should keep a compact 95px title band between workspace rows`
+	)
+
+	assertBounds(editor, caseStudyId, 'z6f3', 40, 545)
+	assertBounds(editor, caseStudyId, 'j5d3', 410, 545)
+	assertBounds(editor, caseStudyId, 'z8k2', 1160, 545)
+	assertBounds(editor, caseStudyId, 'f3r7', 420, 645)
+	assertBounds(editor, caseStudyId, 's7y3', 650, 645)
+	assertBounds(editor, caseStudyId, 'c6p2', 920, 645)
+
+	// Stable source layers and checklist cards should rise with their containing bottom row.
+	for (const localId of ['v7p2', 'c9r5', 'h3n6']) {
+		assertBounds(editor, caseStudyId, localId, 125, 625)
+	}
+	assertBounds(editor, caseStudyId, 'k1r4', 1190, 615)
+	assertBounds(editor, caseStudyId, 'k2r5', 1430, 615)
+	assertBounds(editor, caseStudyId, 'k3r6', 1190, 695)
+	assertBounds(editor, caseStudyId, 'k4r7', 1430, 695)
+}
+
+function assertBounds(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id'],
+	localId: string,
+	expectedX: number,
+	expectedY: number
+) {
+	const bounds = editor.getShapePageBounds(createShapeId(`obs-${caseStudyId}-${localId}`))
+	assert.ok(bounds, `Expected ${caseStudyId}/${localId}`)
+	assert.equal(bounds.x, expectedX)
+	assert.equal(bounds.y, expectedY)
+}
+
+function assertShapeContained(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id'],
+	shapeLocalId: string,
+	containerLocalId: string
+) {
+	const shapeBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${shapeLocalId}`)
+	)
+	const containerBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${containerLocalId}`)
+	)
+	assert.ok(shapeBounds, `Expected ${caseStudyId}/${shapeLocalId}`)
+	assert.ok(containerBounds, `Expected ${caseStudyId}/${containerLocalId}`)
+	assert.equal(
+		containerBounds.contains(shapeBounds),
+		true,
+		`${shapeLocalId} should fit fully inside ${containerLocalId}`
+	)
+}
+
+function assertShapeInset(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id'],
+	shapeLocalId: string,
+	containerLocalId: string,
+	minimumInset: number
+) {
+	const shapeBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${shapeLocalId}`)
+	)
+	const containerBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${containerLocalId}`)
+	)
+	assert.ok(shapeBounds, `Expected ${caseStudyId}/${shapeLocalId}`)
+	assert.ok(containerBounds, `Expected ${caseStudyId}/${containerLocalId}`)
+	const insets = [
+		shapeBounds.minX - containerBounds.minX,
+		shapeBounds.minY - containerBounds.minY,
+		containerBounds.maxX - shapeBounds.maxX,
+		containerBounds.maxY - shapeBounds.maxY,
+	]
+	assert.ok(
+		insets.every((inset) => inset >= minimumInset),
+		`${shapeLocalId} should keep at least ${minimumInset}px inside ${containerLocalId}: ${insets.join(', ')}`
+	)
+}
+
+function assertShapesDoNotOverlap(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id'],
+	firstLocalId: string,
+	secondLocalId: string
+) {
+	const firstBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${firstLocalId}`)
+	)
+	const secondBounds = editor.getShapePageBounds(
+		createShapeId(`obs-${caseStudyId}-${secondLocalId}`)
+	)
+	assert.ok(firstBounds, `Expected ${caseStudyId}/${firstLocalId}`)
+	assert.ok(secondBounds, `Expected ${caseStudyId}/${secondLocalId}`)
+	assert.equal(
+		Box.Collides(firstBounds, secondBounds),
+		false,
+		`${firstLocalId} should not overlap ${secondLocalId}`
+	)
+}
+
+function getShapeText(editor: Editor, shape: TLShape) {
+	return editor.getShapeUtil(shape).getText(shape) ?? ''
+}
+
+function assertClose(actual: number, expected: number, message: string) {
+	assert.ok(
+		Math.abs(actual - expected) <= 1e-6,
+		`${message}: expected ${expected}, received ${actual}`
+	)
+}
+
+function assertViewportContains(viewport: Box, expected: Box) {
+	assert.ok(viewport.minX <= expected.minX + 1e-6, 'viewport should include left edge')
+	assert.ok(viewport.minY <= expected.minY + 1e-6, 'viewport should include top edge')
+	assert.ok(viewport.maxX >= expected.maxX - 1e-6, 'viewport should include right edge')
+	assert.ok(viewport.maxY >= expected.maxY - 1e-6, 'viewport should include bottom edge')
+}
+
+function assertViewportJsonContains(
+	actual: ReturnType<Box['toJson']> | null,
+	expected: Box
+) {
+	assert.ok(actual)
+	assertViewportContains(new Box(actual.x, actual.y, actual.w, actual.h), expected)
+}
+
+function assertStep4WorkspaceVisible(editor: Editor) {
+	const viewport = editor.getViewportPageBounds()
+	for (const localId of STEP_4_REQUIRED_VISIBLE_IDS) {
+		const bounds = editor.getShapePageBounds(
+			createShapeId(`obs-explicit-relations-${localId}`)
+		)
+		assert.ok(bounds, `Expected Step 4 shape ${localId}`)
+		assertViewportContains(viewport, bounds)
+	}
+}
+
+function getLogicalGeometry(
+	editor: Editor,
+	caseStudyId: (typeof OBSERVATION_CASE_STUDIES)[number]['id']
+) {
+	const prefix = `shape:obs-${caseStudyId}-`
+	const geometry: Record<string, ReturnType<Box['toJson']>> = {}
+	for (const shape of getPageShapes(editor, editor.getCurrentPage())) {
+		const bounds = editor.getShapePageBounds(shape.id)
+		if (!bounds || !shape.id.startsWith(prefix)) continue
+		geometry[shape.id.slice(prefix.length)] = bounds.toJson()
+	}
+	return geometry
+}
+
+function changedGeometryIds(
+	before: Record<string, ReturnType<Box['toJson']>>,
+	after: Record<string, ReturnType<Box['toJson']>>
+) {
+	assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort())
+	return Object.keys(before)
+		.filter((id) => JSON.stringify(before[id]) !== JSON.stringify(after[id]))
+		.sort()
 }
 
 async function observeCaseStudy(
@@ -822,8 +1538,11 @@ function getLegacyRepresentations(editor: Editor) {
 	}
 }
 
-async function withEditor(callback: (editor: Editor) => void | Promise<void>) {
-	const editor = createHeadlessEditor()
+async function withEditor(
+	callback: (editor: Editor) => void | Promise<void>,
+	viewport: TestViewport = { x: 0, y: 0, w: 1200, h: 800 }
+) {
+	const editor = createHeadlessEditor(viewport)
 	try {
 		await callback(editor)
 		await new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -832,11 +1551,11 @@ async function withEditor(callback: (editor: Editor) => void | Promise<void>) {
 	}
 }
 
-function createHeadlessEditor() {
+function createHeadlessEditor(viewport: TestViewport) {
 	const shapeUtils = [...defaultShapeUtils]
 	const bindingUtils = [...defaultBindingUtils]
 	const store = createTLStore({ shapeUtils, bindingUtils })
-	const container = createHeadlessElement('div')
+	const container = createHeadlessElement('div', viewport)
 	const editor = new Editor({
 		store,
 		shapeUtils,
@@ -881,7 +1600,7 @@ function createHeadlessEditor() {
 			text,
 		},
 	]
-	editor.updateViewportScreenBounds(new Box(0, 0, 1200, 800))
+	editor.updateViewportScreenBounds(new Box(viewport.x, viewport.y, viewport.w, viewport.h))
 	return editor
 }
 
@@ -946,7 +1665,10 @@ function installHeadlessDom() {
 	}
 }
 
-function createHeadlessElement(tagName: string): HTMLElement {
+function createHeadlessElement(
+	tagName: string,
+	viewport: TestViewport = { x: 0, y: 0, w: 1200, h: 800 }
+): HTMLElement {
 	const styleValues = new Map<string, string>()
 	const children: unknown[] = []
 	const element = {
@@ -980,16 +1702,16 @@ function createHeadlessElement(tagName: string): HTMLElement {
 		focus: () => undefined,
 		blur: () => undefined,
 		getBoundingClientRect: () => ({
-			x: 0,
-			y: 0,
-			left: 0,
-			top: 0,
-			right: 1200,
-			bottom: 800,
-			width: 1200,
-			height: 800,
+			x: viewport.x,
+			y: viewport.y,
+			left: viewport.x,
+			top: viewport.y,
+			right: viewport.x + viewport.w,
+			bottom: viewport.y + viewport.h,
+			width: viewport.w,
+			height: viewport.h,
 		}),
-		scrollWidth: 1200,
+		scrollWidth: viewport.w,
 		childNodes: children,
 		textContent: '',
 		innerHTML: '',

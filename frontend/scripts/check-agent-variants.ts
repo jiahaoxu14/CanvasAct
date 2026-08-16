@@ -71,7 +71,7 @@ assert.deepEqual(
 	original.parts,
 )
 
-// CanvasAct uses the original tldraw action vocabulary without adding compound
+// CanvasObs uses the original tldraw action vocabulary without adding compound
 // actions or removing the original review action.
 assert.deepEqual(original.actions, [...expectedLegacyActions])
 assert.deepEqual(canvasAct.actions, [...expectedLegacyActions])
@@ -179,16 +179,16 @@ for (const actionType of expectedLegacyActions) {
 	const originalActionSchema = getActionSchemaForMode(actionType, original.type)
 	const canvasActActionSchema = getActionSchemaForMode(actionType, canvasAct.type)
 	assert.ok(originalActionSchema, `Missing original schema for ${actionType}`)
-	assert.ok(canvasActActionSchema, `Missing CanvasAct schema for ${actionType}`)
+	assert.ok(canvasActActionSchema, `Missing CanvasObs schema for ${actionType}`)
 	assert.equal(
 		canvasActActionSchema,
 		originalActionSchema,
-		`CanvasAct must reuse the exact original schema for ${actionType}`,
+		`CanvasObs must reuse the exact original schema for ${actionType}`,
 	)
 }
 
 // Reusing the same util constructors prevents selector resolution, contracts,
-// verification, or other CanvasAct-only execution from surviving accidentally.
+// verification, or other CanvasObs-only execution from surviving accidentally.
 const agentStub = { editor: {} } as Parameters<typeof getAgentActionUtilsRecordForMode>[0]
 const originalUtils = getAgentActionUtilsRecordForMode(agentStub, original.type)
 const canvasActUtils = getAgentActionUtilsRecordForMode(agentStub, canvasAct.type)
@@ -196,17 +196,17 @@ for (const actionType of expectedLegacyActions) {
 	assert.equal(
 		canvasActUtils[actionType].constructor,
 		originalUtils[actionType].constructor,
-		`CanvasAct must reuse the exact original action util for ${actionType}`,
+		`CanvasObs must reuse the exact original action util for ${actionType}`,
 	)
 	assert.equal(
 		'getActionContract' in canvasActUtils[actionType],
 		false,
-		`CanvasAct action util ${actionType} still exposes a postcondition contract`,
+		`CanvasObs action util ${actionType} still exposes a postcondition contract`,
 	)
 	assert.equal(
 		'prepareActionContract' in canvasActUtils[actionType],
 		false,
-		`CanvasAct action util ${actionType} still prepares a postcondition contract`,
+		`CanvasObs action util ${actionType} still prepares a postcondition contract`,
 	)
 }
 

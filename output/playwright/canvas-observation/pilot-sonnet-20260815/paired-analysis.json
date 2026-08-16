@@ -1,0 +1,755 @@
+{
+  "schemaVersion": 1,
+  "analysisType": "paired-observation-experiment",
+  "generatedAt": "2026-08-15T22:15:00.568Z",
+  "runId": "pilot-sonnet-20260815",
+  "profile": "pilot",
+  "isPilot": true,
+  "source": {
+    "runDirectory": "/Users/jiahaoxu/Github/CanvasAct/output/playwright/canvas-observation/pilot-sonnet-20260815",
+    "resultsFile": "results.jsonl",
+    "trialDataModified": false
+  },
+  "sample": {
+    "label": "Pilot: n=8 matched pairs (16 complete trials)",
+    "recordedTrials": 16,
+    "completeTrials": 16,
+    "failedOrIncompleteTrials": 0,
+    "matchedPairs": 8,
+    "configuredRepetitions": 2,
+    "models": [
+      "claude-sonnet-4-5"
+    ],
+    "cases": [
+      "object-state",
+      "viewport-coverage",
+      "workspace-structure",
+      "explicit-relations"
+    ],
+    "rotations": [
+      "blue-middle",
+      "editable-middle",
+      "calls-attached",
+      "upper-bound"
+    ],
+    "variants": [
+      "canvasact",
+      "original-tldraw"
+    ]
+  },
+  "metricDefinitions": {
+    "grounding": "Exact target grounding reported by the final evaluator.",
+    "geometryConditionalOnGrounding": "Geometry pass rate only among trials with correct grounding; its denominator is not all trials.",
+    "overall": "Final evaluator overall pass (grounding, geometry, relation, and collateral).",
+    "collateral": "No disallowed additions, updates, or removals.",
+    "modelCalls": "Sum of trajectory modelCallCount values within each trial.",
+    "trialLatencyMs": "Runner wall-clock duration for the complete trial.",
+    "latencyToFirstActionMs": "Elapsed trajectory time through the first recorded action, including earlier no-action trajectories when available."
+  },
+  "byVariant": {
+    "canvasact": {
+      "trials": 8,
+      "grounding": {
+        "passed": 8,
+        "evaluated": 8,
+        "failed": 0,
+        "rate": 1
+      },
+      "geometryConditionalOnGrounding": {
+        "passed": 3,
+        "evaluated": 8,
+        "failed": 5,
+        "rate": 0.375,
+        "correctlyGroundedTrials": 8
+      },
+      "overall": {
+        "passed": 3,
+        "evaluated": 8,
+        "failed": 5,
+        "rate": 0.375
+      },
+      "collateral": {
+        "passed": 8,
+        "evaluated": 8,
+        "failed": 0,
+        "rate": 1
+      },
+      "modelCalls": {
+        "evaluated": 8,
+        "total": 13,
+        "mean": 1.625,
+        "median": 2,
+        "min": 1,
+        "max": 2
+      },
+      "trialLatencyMs": {
+        "evaluated": 8,
+        "total": 122673,
+        "mean": 15334.125,
+        "median": 14313,
+        "min": 9562,
+        "max": 29717
+      },
+      "latencyToFirstActionMs": {
+        "evaluated": 8,
+        "total": 49057,
+        "mean": 6132.125,
+        "median": 5752.5,
+        "min": 4964,
+        "max": 7920
+      }
+    },
+    "original-tldraw": {
+      "trials": 8,
+      "grounding": {
+        "passed": 4,
+        "evaluated": 8,
+        "failed": 4,
+        "rate": 0.5
+      },
+      "geometryConditionalOnGrounding": {
+        "passed": 1,
+        "evaluated": 4,
+        "failed": 3,
+        "rate": 0.25,
+        "correctlyGroundedTrials": 4
+      },
+      "overall": {
+        "passed": 1,
+        "evaluated": 8,
+        "failed": 7,
+        "rate": 0.125
+      },
+      "collateral": {
+        "passed": 4,
+        "evaluated": 8,
+        "failed": 4,
+        "rate": 0.5
+      },
+      "modelCalls": {
+        "evaluated": 8,
+        "total": 18,
+        "mean": 2.25,
+        "median": 1,
+        "min": 1,
+        "max": 7
+      },
+      "trialLatencyMs": {
+        "evaluated": 8,
+        "total": 140016,
+        "mean": 17502,
+        "median": 14886.5,
+        "min": 6745,
+        "max": 41887
+      },
+      "latencyToFirstActionMs": {
+        "evaluated": 8,
+        "total": 34485,
+        "mean": 4310.625,
+        "median": 4300,
+        "min": 3537,
+        "max": 4979
+      }
+    }
+  },
+  "byCase": {
+    "object-state": {
+      "trials": 4,
+      "variants": {
+        "canvasact": {
+          "trials": 2,
+          "grounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0,
+            "correctlyGroundedTrials": 2
+          },
+          "overall": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "collateral": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 4,
+            "mean": 2,
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 33125,
+            "mean": 16562.5,
+            "median": 16562.5,
+            "min": 16253,
+            "max": 16872
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 15071,
+            "mean": 7535.5,
+            "median": 7535.5,
+            "min": 7151,
+            "max": 7920
+          }
+        },
+        "original-tldraw": {
+          "trials": 2,
+          "grounding": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 0,
+            "evaluated": 0,
+            "failed": 0,
+            "rate": null,
+            "correctlyGroundedTrials": 0
+          },
+          "overall": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "collateral": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 2,
+            "mean": 1,
+            "median": 1,
+            "min": 1,
+            "max": 1
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 16028,
+            "mean": 8014,
+            "median": 8014,
+            "min": 6745,
+            "max": 9283
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 9280,
+            "mean": 4640,
+            "median": 4640,
+            "min": 4301,
+            "max": 4979
+          }
+        }
+      },
+      "paired": {
+        "matchedPairs": 2,
+        "grounding": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 0,
+          "bothFail": 0,
+          "canvasactOnlyPass": 2,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 2,
+          "exactTwoSidedMcnemar": {
+            "pValue": 0.5,
+            "exactFraction": "1/2",
+            "method": "exact two-sided binomial McNemar"
+          }
+        },
+        "overall": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 0,
+          "bothFail": 2,
+          "canvasactOnlyPass": 0,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 0,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        }
+      }
+    },
+    "viewport-coverage": {
+      "trials": 4,
+      "variants": {
+        "canvasact": {
+          "trials": 2,
+          "grounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5,
+            "correctlyGroundedTrials": 2
+          },
+          "overall": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "collateral": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 4,
+            "mean": 2,
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 28626,
+            "mean": 14313,
+            "median": 14313,
+            "min": 14216,
+            "max": 14410
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 10693,
+            "mean": 5346.5,
+            "median": 5346.5,
+            "min": 4964,
+            "max": 5729
+          }
+        },
+        "original-tldraw": {
+          "trials": 2,
+          "grounding": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 0,
+            "evaluated": 1,
+            "failed": 1,
+            "rate": 0,
+            "correctlyGroundedTrials": 1
+          },
+          "overall": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "collateral": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 11,
+            "mean": 5.5,
+            "median": 5.5,
+            "min": 4,
+            "max": 7
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 68789,
+            "mean": 34394.5,
+            "median": 34394.5,
+            "min": 26902,
+            "max": 41887
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 9434,
+            "mean": 4717,
+            "median": 4717,
+            "min": 4519,
+            "max": 4915
+          }
+        }
+      },
+      "paired": {
+        "matchedPairs": 2,
+        "grounding": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 1,
+          "bothFail": 0,
+          "canvasactOnlyPass": 1,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 1,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        },
+        "overall": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 0,
+          "bothFail": 1,
+          "canvasactOnlyPass": 1,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 1,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        }
+      }
+    },
+    "workspace-structure": {
+      "trials": 4,
+      "variants": {
+        "canvasact": {
+          "trials": 2,
+          "grounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1,
+            "correctlyGroundedTrials": 2
+          },
+          "overall": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "collateral": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 3,
+            "mean": 1.5,
+            "median": 1.5,
+            "min": 1,
+            "max": 2
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 41567,
+            "mean": 20783.5,
+            "median": 20783.5,
+            "min": 11850,
+            "max": 29717
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 11043,
+            "mean": 5521.5,
+            "median": 5521.5,
+            "min": 5309,
+            "max": 5734
+          }
+        },
+        "original-tldraw": {
+          "trials": 2,
+          "grounding": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 1,
+            "evaluated": 1,
+            "failed": 0,
+            "rate": 1,
+            "correctlyGroundedTrials": 1
+          },
+          "overall": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "collateral": {
+            "passed": 1,
+            "evaluated": 2,
+            "failed": 1,
+            "rate": 0.5
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 2,
+            "mean": 1,
+            "median": 1,
+            "min": 1,
+            "max": 1
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 29816,
+            "mean": 14908,
+            "median": 14908,
+            "min": 13837,
+            "max": 15979
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 7174,
+            "mean": 3587,
+            "median": 3587,
+            "min": 3537,
+            "max": 3637
+          }
+        }
+      },
+      "paired": {
+        "matchedPairs": 2,
+        "grounding": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 1,
+          "bothFail": 0,
+          "canvasactOnlyPass": 1,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 1,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        },
+        "overall": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 1,
+          "bothFail": 0,
+          "canvasactOnlyPass": 1,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 1,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        }
+      }
+    },
+    "explicit-relations": {
+      "trials": 4,
+      "variants": {
+        "canvasact": {
+          "trials": 2,
+          "grounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0,
+            "correctlyGroundedTrials": 2
+          },
+          "overall": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "collateral": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 2,
+            "mean": 1,
+            "median": 1,
+            "min": 1,
+            "max": 1
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 19355,
+            "mean": 9677.5,
+            "median": 9677.5,
+            "min": 9562,
+            "max": 9793
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 12250,
+            "mean": 6125,
+            "median": 6125,
+            "min": 5771,
+            "max": 6479
+          }
+        },
+        "original-tldraw": {
+          "trials": 2,
+          "grounding": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "geometryConditionalOnGrounding": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0,
+            "correctlyGroundedTrials": 2
+          },
+          "overall": {
+            "passed": 0,
+            "evaluated": 2,
+            "failed": 2,
+            "rate": 0
+          },
+          "collateral": {
+            "passed": 2,
+            "evaluated": 2,
+            "failed": 0,
+            "rate": 1
+          },
+          "modelCalls": {
+            "evaluated": 2,
+            "total": 3,
+            "mean": 1.5,
+            "median": 1.5,
+            "min": 1,
+            "max": 2
+          },
+          "trialLatencyMs": {
+            "evaluated": 2,
+            "total": 25383,
+            "mean": 12691.5,
+            "median": 12691.5,
+            "min": 9447,
+            "max": 15936
+          },
+          "latencyToFirstActionMs": {
+            "evaluated": 2,
+            "total": 8597,
+            "mean": 4298.5,
+            "median": 4298.5,
+            "min": 4298,
+            "max": 4299
+          }
+        }
+      },
+      "paired": {
+        "matchedPairs": 2,
+        "grounding": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 2,
+          "bothFail": 0,
+          "canvasactOnlyPass": 0,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 0,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        },
+        "overall": {
+          "eligiblePairs": 2,
+          "unscoredPairs": 0,
+          "bothPass": 0,
+          "bothFail": 2,
+          "canvasactOnlyPass": 0,
+          "original-tldrawOnlyPass": 0,
+          "discordantPairs": 0,
+          "exactTwoSidedMcnemar": {
+            "pValue": 1,
+            "exactFraction": "1/1",
+            "method": "exact two-sided binomial McNemar"
+          }
+        }
+      }
+    }
+  },
+  "paired": {
+    "variants": {
+      "left": "canvasact",
+      "right": "original-tldraw"
+    },
+    "totalPairIds": 8,
+    "completeMatchedPairs": 8,
+    "incompleteOrInvalidPairs": 0,
+    "grounding": {
+      "eligiblePairs": 8,
+      "unscoredPairs": 0,
+      "bothPass": 4,
+      "bothFail": 0,
+      "canvasactOnlyPass": 4,
+      "original-tldrawOnlyPass": 0,
+      "discordantPairs": 4,
+      "exactTwoSidedMcnemar": {
+        "pValue": 0.125,
+        "exactFraction": "1/8",
+        "method": "exact two-sided binomial McNemar"
+      }
+    },
+    "overall": {
+      "eligiblePairs": 8,
+      "unscoredPairs": 0,
+      "bothPass": 1,
+      "bothFail": 5,
+      "canvasactOnlyPass": 2,
+      "original-tldrawOnlyPass": 0,
+      "discordantPairs": 2,
+      "exactTwoSidedMcnemar": {
+        "pValue": 0.5,
+        "exactFraction": "1/2",
+        "method": "exact two-sided binomial McNemar"
+      }
+    }
+  },
+  "interpretation": "This is a small pilot used to validate the protocol and analysis pipeline. Rates and exact p-values are descriptive and should not be treated as confirmatory evidence."
+}

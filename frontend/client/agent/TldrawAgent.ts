@@ -96,7 +96,7 @@ export class TldrawAgent {
 	/** The mode manager associated with this agent. */
 	mode: AgentModeManager
 
-	/** Selects the original tldraw agent or the CanvasAct method. */
+	/** Selects the original tldraw agent or the CanvasObs method. */
 	variant: AgentVariantManager
 
 	/** The model name manager associated with this agent. */
@@ -748,6 +748,9 @@ export class TldrawAgent {
 				}
 				trajectoryStatus = 'failed'
 				trajectoryError = e
+				// HTTP failures must reach prompt(), which records requests.lastError for
+				// automation and presents the already-sanitized message to the user.
+				if (e instanceof AgentStreamHttpError) throw e
 				this.onError(e)
 				return
 			} finally {
@@ -784,6 +787,10 @@ export class TldrawAgent {
 			},
 			signal,
 		})
+
+		if (!res.ok) {
+			throw await AgentStreamHttpError.fromResponse(res)
+		}
 
 		if (!res.body) {
 			throw Error('No body in response')
@@ -825,6 +832,69 @@ export class TldrawAgent {
 			reader.releaseLock()
 		}
 	}
+}
+
+class AgentStreamHttpError extends Error {
+	private constructor(message: string) {
+		super(message)
+		this.name = 'AgentStreamHttpError'
+	}
+
+	static async fromResponse(response: Response) {
+		let responseText = ''
+		try {
+			responseText = await response.text()
+		} catch {
+			// Some runtimes expose an unreadable or already-consumed error body. The
+			// HTTP status is sufficient to report the request failure in that case.
+		}
+
+		const statusText = sanitizeAgentHttpErrorDetail(response.statusText)
+		const status = `${response.status}${statusText ? ` ${statusText}` : ''}`
+		const detail = getAgentHttpErrorDetail(responseText)
+		return new AgentStreamHttpError(
+			`Agent request failed because /stream returned HTTP ${status}.${detail ? ` ${detail}` : ''}`
+		)
+	}
+}
+
+function getAgentHttpErrorDetail(responseText: string) {
+	if (!responseText.trim() || /^\s*</.test(responseText)) return ''
+
+	let candidate: unknown = responseText
+	try {
+		const parsed = JSON.parse(responseText) as unknown
+		if (typeof parsed === 'string') candidate = parsed
+		else if (isRecord(parsed)) {
+			if (typeof parsed.error === 'string') candidate = parsed.error
+			else if (isRecord(parsed.error) && typeof parsed.error.message === 'string') {
+				candidate = parsed.error.message
+			} else if (typeof parsed.message === 'string') candidate = parsed.message
+			else candidate = ''
+		}
+	} catch {
+		// Plain-text worker errors are useful when short and sanitized below.
+	}
+
+	return typeof candidate === 'string' ? sanitizeAgentHttpErrorDetail(candidate) : ''
+}
+
+function sanitizeAgentHttpErrorDetail(value: string) {
+	return value
+		.replace(
+			/\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*[^\s,;]+/gi,
+			'[credential redacted]'
+		)
+		.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, 'Bearer [redacted]')
+		.replace(/\b(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{20,})\b/g, '[credential redacted]')
+		.replace(/([?&](?:api[_-]?key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 280)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
 }
 
 function getUserFacingAgentError(error: unknown) {
