@@ -1,0 +1,17 @@
+{
+  "frontend/shared/types/ids-schema.ts": "791dd51d08bc4461fa09c16e84e9ece229ff22327f926be59fb2aae2fca354a3",
+  "frontend/shared/format/FocusedColor.ts": "8b197505119250aa1c1346fc62ce5cc669438234ba52342c2fa7454a7d017787",
+  "frontend/shared/format/FocusedFill.ts": "aad6a388cc423411343a586b1b2714bbebe7ccb545c747ff1567a7c46d970fd2",
+  "frontend/shared/format/FocusedFontSize.ts": "edaefe11ee9a5de3b52a9076f87107393b31d4008b48657650763143adbb29d4",
+  "frontend/shared/format/FocusedGeoShapeType.ts": "cabac464edb73937b2d9264302ccd65d74aee74f56bb6a925e96b1cbb823a918",
+  "frontend/shared/format/FocusedShape.ts": "391f49d4321d4a0f7717f76e4179cc5b055dae77b9817a795db55294b34410a0",
+  "frontend/worker/prompt/sections/flagged.ts": "e17f222d1b9c2fa4e30649316eafdcc6167897a01e4712d39e595d9e664f4c31",
+  "frontend/worker/prompt/sections/rules-section.ts": "08d552e807023bee762a41558a4ba84d26f73d55402766db582408f6e54e3725",
+  "frontend/shared/format/PromptCanvasObservation.ts": "539c8fd623e0e1a9d8ceff4d885a22f330b94ae531df86c814e3083abf20597a",
+  "frontend/shared/schema/PromptPartDefinitions.ts": "c561b4278877e2ba9e8fe249eaedd0f29858396a99b45e69e368700c21902abb",
+  "frontend/worker/prompt/buildMessages.ts": "70b7d5a2e2a696baa5de997e805f5ff0614b274ba08754291da62d9525c104b3",
+  "frontend/worker/prompt/buildSystemPrompt.ts": "0931919fdef3b026012292831a18e1728e1da0979c135b955cfcd0038278cdc3",
+  "frontend/client/agent/TldrawAgent.ts": "41b7175814b86562094e8b0cd30f1e6d73155861dc50a781427f6355dbd377ae",
+  "frontend/client/agent/managers/AgentTrajectoryManager.ts": "4e5da1554e32219eeebd14740fbd0e85732da9db5de0d7a9d84d63fb84f26e12",
+  "frontend/client/parts/CanvasObservationPartUtil.ts": "6c2ce0e6192eb11e476362b63e2770df4bbbcbc494b039add2fa04e0a43b20c8"
+}
